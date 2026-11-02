@@ -47,6 +47,9 @@ const graph = new Graph($('#canvas'), {
   moved: debounce(() => savePositions(), 1200),
   dropLead: (id, x, y) => seedLead(id, x, y),
 });
+// ?debug exposes the canvas for scripted demos and tests (node positions, camera).
+if (new URLSearchParams(location.search).has('debug')) window.ideagen = { graph, state: () => S };
+
 const moveCard = (e) => {
   const card = $('#hovercard');
   card.style.left = `${Math.min(e.clientX + 16, innerWidth - card.offsetWidth - 12)}px`;
