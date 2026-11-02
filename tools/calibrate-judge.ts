@@ -6,8 +6,8 @@
 //   npm run calibrate -- --model ollama:qwen3:8b
 // Re-run it whenever you point the judge at a different model.
 //
-// The weak set includes ideas the OLD IdeaSphere judge rated 3/3 "gold"
-// ("fire", "electric cars"). The new judge must not.
+// The weak set includes bare topics ("fire", "electric cars") that an
+// uncalibrated LLM judge rated 3/3 "gold". This judge must not.
 
 import { makeLLM } from '../server/llm.ts';
 import { DEFAULT_APP_SETTINGS, makeChat } from '../server/providers.ts';

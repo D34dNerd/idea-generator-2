@@ -2,8 +2,8 @@
 //
 // The judge scores three criteria 1–5. The medal comes from the sum (3–15)
 // in code, never from the model, so the thresholds stay put when the prompt
-// changes. Gold must be rare: the old IdeaSphere gave 3/3 to the bare word
-// "fire", which made "gold" meaningless.
+// changes. Gold must be rare: an uncalibrated LLM jury gave 3/3 to the bare
+// word "fire", which makes "gold" meaningless.
 
 export const CRITERIA = ['originality', 'feasibility', 'impact'];
 

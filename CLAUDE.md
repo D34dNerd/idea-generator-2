@@ -1,6 +1,6 @@
 # CLAUDE.md – Idea Generator 2
 
-Successor to `~/Projekt/IdeaSphereKronoberg` (Flask, 2025). Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules. There is no build step. Port 8300, loopback only.
+Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules. There is no build step. Port 8300, loopback only.
 
 ## Commands
 
@@ -28,7 +28,7 @@ Successor to `~/Projekt/IdeaSphereKronoberg` (Flask, 2025). Node 25 runs the Typ
 
 ## Rules that matter
 
-- **The medal comes from code, not the model:** a sum of three 1–5 scores, bronze from 9, silver from 11, gold from 13 (`score.js`). The old app gave 3/3 to the bare word "fire"; the calibration test keeps that from coming back.
+- **The medal comes from code, not the model:** a sum of three 1–5 scores, bronze from 9, silver from 11, gold from 13 (`score.js`). Left uncalibrated, an LLM jury gave 3/3 to the bare word "fire"; the calibration test keeps that from happening here.
 - **Never put integer `minimum`/`maximum` in a JSON schema.** Anthropic rejects them. Put the range in the description and clamp in code.
 - **Anthropic native: send no `temperature`.** API version 2026-10-21 rejects it. Use effort `low`. The SDK sends the key as a Bearer token.
 - **OpenRouter: send `reasoning:{enabled:false}`** and retry without it on a 400 that mentions reasoning (some models insist on reasoning).

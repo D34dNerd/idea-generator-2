@@ -1,9 +1,9 @@
 // Evolution autopilot: decides the next move. Pure, no DOM, no network.
 //
-// The old autopilot merged two random balls. This one breeds: parents are
-// picked by tournament selection on the judge's score, so strong ideas get
-// more children. Now and then it "mutates" instead, expanding a strong idea
-// that has not been expanded yet, which brings new material into the pool.
+// Not random merging: parents are picked by tournament selection on the
+// judge's score, so strong ideas get more children. Now and then it "mutates"
+// instead, expanding a strong idea that has not been expanded yet, which
+// brings new material into the pool.
 
 import { fitness } from './score.js';
 

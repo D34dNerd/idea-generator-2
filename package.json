@@ -4,7 +4,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Idégeneratorn: frö, förgrena, korsa, bedöm, och låt evolutionen avla fram de bästa idéerna. Efterföljaren till IdeaSphere Kronoberg.",
+  "description": "Idégeneratorn: frö, förgrena, korsa, bedöm, och låt evolutionen avla fram de bästa idéerna.",
   "engines": {
     "node": ">=25"
   },

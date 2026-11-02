@@ -2,7 +2,7 @@
 
 [![Support me on Patreon](https://img.shields.io/badge/Patreon-Support%20my%20work-FF424D?style=flat&logo=patreon&logoColor=white)](https://www.patreon.com/AndersBjarby)
 
-An idea board where language models branch, cross and judge ideas, and an evolution autopilot breeds the best ones. The successor to IdeaSphere Kronoberg.
+An idea board where language models branch, cross and judge ideas, and an evolution autopilot breeds the best ones.
 
 Each board has a **goal** that every step works toward. Seed it with a thought, a link or a lead from the scouts. Then branch ideas, drag one idea onto another to cross them, and let a calibrated jury score each one on originality, feasibility and impact, with a reason. Gold ideas turn into **Claude Code project folders** by themselves.
 

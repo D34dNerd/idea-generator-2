@@ -94,7 +94,7 @@ const lastCall = (schema: string) => [...calls].reverse().find((c) => c.schemaNa
 
 test('full loop: seed → background judge → expand → combine → export', async () => {
   judgeScores = { originality: 3, feasibility: 3, impact: 3 };
-  const board = await newBoard({ goal: 'Färre bilresor i Kronoberg' });
+  const board = await newBoard({ goal: 'Färre bilresor i staden' });
   assert.equal(board.title, 'Ny tavla');
   assert.equal(board.config.mode, 'manual');
   assert.equal(board.config.flowName, 'Uppfinnaren · Inventor', 'the first template seeds the flow');
@@ -104,7 +104,7 @@ test('full loop: seed → background judge → expand → combine → export', a
   assert.equal(s.title, 'Lånecyklar');
   await engine.idle();
   assert.equal(calls.length, before + 1, 'a short seed needs no LLM call, only the judge');
-  assert.match(lastCall('judgement').user, /Färre bilresor i Kronoberg/, 'the judge sees the goal');
+  assert.match(lastCall('judgement').user, /Färre bilresor i staden/, 'the judge sees the goal');
   const judged = repo.getIdea(s.id)!;
   assert.equal(judged.originality, 3);
   assert.deepEqual(judged.keywords, ['public space', 'sound'], 'keywords are normalised');
@@ -127,7 +127,7 @@ test('full loop: seed → background judge → expand → combine → export', a
 
   const { data: md } = await api('GET', `/api/boards/${board.id}/export.md?lang=sv`);
   assert.match(md, /^# Ny tavla/);
-  assert.match(md, /> Färre bilresor i Kronoberg/);
+  assert.match(md, /> Färre bilresor i staden/);
   assert.match(md, /## 🥉 Korsning — 10\/15/, '10/15 is bronze');
   assert.match(md, /`public space` `sound`/);
   assert.ok(repo.spentOn(board.id) > 0, 'spend lands on the board');
