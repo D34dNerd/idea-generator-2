@@ -1,0 +1,9 @@
+node_modules/
+data/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+# Obsidian-vaulten är arbetsanteckningar och ska aldrig till ett publikt repo
+vault/
+.obsidian/
