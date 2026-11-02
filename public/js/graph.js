@@ -49,6 +49,8 @@ export class Graph {
     this.dirty = true;
     this.wasSettled = true;
     this.focusCache = { id: null, set: null, edges: null };
+    /** Screen space covered by overlays (seed bar, exhibition title) that fit() should keep clear. */
+    this.insets = { top: 30, right: 30, bottom: 100, left: 30 };
 
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
@@ -190,9 +192,11 @@ export class Graph {
       x0 = Math.min(x0, n.x - n.tr); y0 = Math.min(y0, n.y - n.tr);
       x1 = Math.max(x1, n.x + n.tr); y1 = Math.max(y1, n.y + n.tr);
     }
-    const w = this.c.clientWidth, h = this.c.clientHeight;
-    const k = Math.min(1.4, Math.max(0.15, Math.min(w / (x1 - x0 + 160), h / (y1 - y0 + 160))));
-    const target = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, k };
+    const { top, right, bottom, left } = this.insets;
+    const w = Math.max(100, this.c.clientWidth - left - right), h = Math.max(100, this.c.clientHeight - top - bottom);
+    const k = Math.min(1.4, Math.max(0.15, Math.min(w / (x1 - x0 + 80), h / (y1 - y0 + 80))));
+    // Center the board in the free area, not behind the overlays.
+    const target = { x: (x0 + x1) / 2 - (left - right) / (2 * k), y: (y0 + y1) / 2 - (top - bottom) / (2 * k), k };
     if (instant) this.cam = target;
     else this.camTarget = target;
     this.dirty = true;
@@ -568,7 +572,13 @@ export class Graph {
         return;
       }
       if (d?.type === 'node') {
-        if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 5) d.moved = true;
+        if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 5) {
+          d.moved = true;
+          if (this.hover != null) {
+            this.hover = null; // the hover card must not cover the drop target
+            this.h.hover?.(null);
+          }
+        }
         if (!d.moved) return;
         const w = this.toWorld(e.clientX, e.clientY);
         const n = this.nodes.get(d.id);

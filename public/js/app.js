@@ -17,6 +17,11 @@ const S = {
   settings: loadSettings(), stopFollow: null, createAt: null, leadsTab: 'x', refreshing: {}, exhibit: false,
 };
 const fail = (e) => toast(errorText(e), 'error', 8000);
+/** Built-in template names are bilingual ("Uppfinnaren · Inventor"); show the half that matches the UI. */
+const localName = (name) => {
+  const m = /^(.+?) · (.+)$/.exec(name);
+  return m ? (getLang() === 'en' ? m[2] : m[1]) : name;
+};
 const ideaList = () => [...S.ideas.values()];
 
 // ================================================================ canvas
@@ -268,6 +273,7 @@ function renderHeader() {
   if (!b) return;
   $('#board-title').value = b.title;
   $('#board-goal').value = b.goal;
+  $('#board-goal').title = b.goal || t('goal');
   $('#board-goal').placeholder = t('noGoal');
   $('#board-origin').replaceChildren(
     b.originBoardId
@@ -594,7 +600,7 @@ async function newBoardDialog(first = false) {
   if (!S.templates.length) S.templates = (await api('GET', '/api/templates')).templates;
   const title = h('input', { required: true, placeholder: t('newBoard') });
   const goal = h('textarea', { rows: 3, placeholder: t('goalPlaceholder') });
-  const tpl = h('select', {}, S.templates.map((x) => h('option', { value: x.id }, x.name)));
+  const tpl = h('select', {}, S.templates.map((x) => h('option', { value: x.id }, localName(x.name))));
   const dlg = dialog('dlg', t('newBoard'), [
     first ? h('p', {}, t('firstRun')) : null,
     field(t('title'), title), field(t('goal'), goal), field(t('template'), tpl),
@@ -625,7 +631,7 @@ async function boardSettingsDialog() {
   const title = inp(b.title), goal = area(b.goal, 2, { placeholder: t('goalPlaceholder') });
   const lang = h('select', {}, h('option', { value: 'sv', selected: c.lang === 'sv' }, 'Svenska'), h('option', { value: 'en', selected: c.lang === 'en' }, 'English'));
   const flowName = inp(c.flowName), sys = area(c.flow.system, 3), exp = area(c.flow.expand, 3), comb = area(c.flow.combine, 3);
-  const tplSel = h('select', {}, S.templates.map((x) => h('option', { value: x.id }, x.name)));
+  const tplSel = h('select', {}, S.templates.map((x) => h('option', { value: x.id }, localName(x.name))));
   const guidance = area(c.judgeGuidance, 2, { placeholder: t('judgeGuidancePh') });
   const autoProj = h('input', { type: 'checkbox', checked: c.autoProjectOnGold });
   const xOn = h('input', { type: 'checkbox', checked: c.researchers.x.enabled }), xFocus = inp(c.researchers.x.focus, { placeholder: t('focusPh') });
@@ -820,6 +826,7 @@ async function enterExhibit() {
   S.exhibit = true;
   document.body.classList.add('exhibit');
   graph.followNewest = true;
+  graph.insets = { top: 250, right: 40, bottom: 130, left: 40 };
   graph.select(null);
   S.selected = null;
   renderHeader();
@@ -834,6 +841,7 @@ function leaveExhibit() {
   S.exhibit = false;
   document.body.classList.remove('exhibit');
   graph.followNewest = false;
+  graph.insets = { top: 30, right: 30, bottom: 100, left: 30 };
   if (document.fullscreenElement) document.exitFullscreen?.();
   renderPanel();
 }
