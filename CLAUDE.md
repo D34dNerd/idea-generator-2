@@ -53,4 +53,4 @@ Successor to `~/Projekt/IdeaSphereKronoberg` (Flask, 2025). Node 25 runs the Typ
 
   Use local models to generate ideas, not to judge them.
 - **X scout:** about 48 s and $0.04 per refresh; 5 of 6 leads were cited.
-- **Providers tested live:** OpenRouter, OpenAI and Ollama (generation and model listing). Not yet tested against the live services: GitHub Models, Azure, MLX, LM Studio, and Anthropic direct (only against a fake server). Use the Test button in Settings.
+- **Providers tested live:** OpenRouter, OpenAI and Ollama (generation and model listing). Not yet tested against the live services: Azure / Microsoft Foundry, MLX, LM Studio, and Anthropic direct (only against a fake server). GitHub Models was removed: GitHub retired it on 30 July 2026 (every endpoint now answers a bare `200 OK`). Use the Test button in Settings.

@@ -7,9 +7,8 @@
 // Environment variables are a fallback for keys.
 
 import Anthropic from '@anthropic-ai/sdk';
-import { execFileSync } from 'node:child_process';
 
-export type ProviderId = 'openrouter' | 'anthropic' | 'openai' | 'github' | 'azure' | 'ollama' | 'mlx' | 'lmstudio' | 'custom';
+export type ProviderId = 'openrouter' | 'anthropic' | 'openai' | 'azure' | 'ollama' | 'mlx' | 'lmstudio' | 'custom';
 export type Role = 'distill' | 'expand' | 'combine' | 'judge' | 'summary' | 'research' | 'x' | 'brief';
 export const ROLES: Role[] = ['distill', 'expand', 'combine', 'judge', 'summary', 'research', 'x', 'brief'];
 
@@ -54,13 +53,9 @@ export const PROVIDERS: Record<ProviderId, ProviderDef> = {
   openrouter: { label: 'OpenRouter', type: 'openai', base: 'https://openrouter.ai/api/v1', env: 'OPENROUTER_API_KEY', needsKey: true, search: true },
   anthropic: { label: 'Anthropic', type: 'anthropic', env: 'ANTHROPIC_API_KEY', needsKey: true },
   openai: { label: 'OpenAI', type: 'openai', base: 'https://api.openai.com/v1', env: 'OPENAI_API_KEY', needsKey: true },
-  github: {
-    label: 'GitHub Models (Copilot)', type: 'openai', base: 'https://models.github.ai/inference', env: 'GITHUB_TOKEN', needsKey: true,
-    note: 'GitHub Copilot has no public completion API for apps. GitHub Models is the sanctioned route: a GitHub token with models:read.',
-  },
   azure: {
-    label: 'Azure OpenAI / AI Foundry (Microsoft Copilot)', type: 'openai', env: 'AZURE_OPENAI_API_KEY', needsKey: true,
-    note: 'Microsoft Copilot has no general completion API. Its models are reachable through Azure OpenAI / AI Foundry: base URL https://<resource>.openai.azure.com/openai/v1, model = deployment name.',
+    label: 'Azure OpenAI / Microsoft Foundry (Copilot models)', type: 'openai', env: 'AZURE_OPENAI_API_KEY', needsKey: true,
+    note: 'Neither GitHub Copilot nor Microsoft Copilot has a completion API for apps, and GitHub Models was retired on 30 July 2026 (GitHub points to Microsoft Foundry). The models behind both Copilots are reachable here: base URL https://<resource>.openai.azure.com/openai/v1, model = deployment name.',
   },
   ollama: { label: 'Ollama (local)', type: 'ollama', needsKey: false, local: true },
   mlx: { label: 'MLX · mlx_lm.server (local)', type: 'openai', needsKey: false, local: true },
@@ -90,30 +85,15 @@ export function mergeAppSettings(raw: any): AppSettings {
   return out;
 }
 
-let ghTokenCache: string | null | undefined;
-function ghToken() {
-  if (ghTokenCache === undefined) {
-    try {
-      ghTokenCache = execFileSync('gh', ['auth', 'token'], { timeout: 3000, encoding: 'utf8' }).trim() || null;
-    } catch {
-      ghTokenCache = null;
-    }
-  }
-  return ghTokenCache;
-}
-
-/** Browser-entered key first, then the environment (and for GitHub, the gh CLI). */
+/** Browser-entered key first, then the environment. */
 export function keyFor(settings: AppSettings, p: ProviderId): string | undefined {
   const k = settings.keys[p] || (PROVIDERS[p].env ? process.env[PROVIDERS[p].env!] : undefined);
-  if (k) return k;
-  if (p === 'github') return ghToken() ?? undefined;
-  return undefined;
+  return k || undefined;
 }
 
-export function keySource(settings: AppSettings, p: ProviderId): 'browser' | 'env' | 'gh' | null {
+export function keySource(settings: AppSettings, p: ProviderId): 'browser' | 'env' | null {
   if (settings.keys[p]) return 'browser';
   if (PROVIDERS[p].env && process.env[PROVIDERS[p].env!]) return 'env';
-  if (p === 'github' && ghToken()) return 'gh';
   return null;
 }
 
@@ -345,10 +325,6 @@ export async function listModels(settings: AppSettings, p: ProviderId): Promise<
       return out;
     }
     if (p === 'ollama') return ((await get(`${base}/api/tags`)).models ?? []).map((m: any) => m.name);
-    if (p === 'github') {
-      const data = await get('https://models.github.ai/catalog/models', key ? { Authorization: `Bearer ${key}` } : {});
-      return (Array.isArray(data) ? data : []).map((m: any) => m.id);
-    }
     if (!base) throw new ProviderError('no_base_url', 'Set a base URL first');
     if (PROVIDERS[p].needsKey && !key) throw new ProviderError('no_key', 'No API key');
     const headers: Record<string, string> = key ? (p === 'azure' ? { 'api-key': key } : { Authorization: `Bearer ${key}` }) : {};

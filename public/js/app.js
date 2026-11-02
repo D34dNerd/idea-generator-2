@@ -705,11 +705,11 @@ async function boardSettingsDialog() {
 }
 
 const PROVIDER_LABELS = {
-  openrouter: 'OpenRouter', anthropic: 'Anthropic', openai: 'OpenAI', github: 'GitHub Models (Copilot)',
-  azure: 'Azure OpenAI / AI Foundry (Microsoft Copilot)', ollama: 'Ollama', mlx: 'MLX (mlx_lm.server)', lmstudio: 'LM Studio', custom: 'OpenAI-compatible',
+  openrouter: 'OpenRouter', anthropic: 'Anthropic', openai: 'OpenAI',
+  azure: 'Azure OpenAI / Microsoft Foundry (Copilot models)', ollama: 'Ollama', mlx: 'MLX (mlx_lm.server)', lmstudio: 'LM Studio', custom: 'OpenAI-compatible',
 };
 const HAS_URL = ['ollama', 'mlx', 'lmstudio', 'azure', 'custom'];
-const HAS_KEY = ['openrouter', 'anthropic', 'openai', 'github', 'azure', 'custom'];
+const HAS_KEY = ['openrouter', 'anthropic', 'openai', 'azure', 'custom'];
 const modelCatalog = new Map();
 
 function refreshModelList() {

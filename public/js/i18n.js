@@ -80,7 +80,7 @@ const DICT = {
     deleteBoard: 'Radera tavlan', confirmDeleteBoard: 'Radera tavlan "{t}" med alla idéer?',
     // app settings
     providers: 'Leverantörer', apiKey: 'API-nyckel', baseUrl: 'Adress', test: 'Testa', testOk: '{n} modeller', keyFrom_browser: 'nyckel här',
-    keyFrom_env: 'nyckel från miljön', keyFrom_gh: 'token från gh', keyMissing: 'ingen nyckel', local: 'lokal',
+    keyFrom_env: 'nyckel från miljön', keyMissing: 'ingen nyckel', local: 'lokal',
     projectsRoot: 'Mapp för Claude Code-projekt', globalBudget: 'Global gräns, USD per dag', spend: 'Förbrukat: ${today} i dag · ${total} totalt',
     settingsNote: 'Allt här sparas i webbläsaren (localStorage). Servern får inställningarna i minnet och skriver aldrig nycklar till disk.',
     settingsSaved: 'Inställningarna sparades',
@@ -179,7 +179,7 @@ const DICT = {
     role_research: 'Research scout', role_x: 'X scout', role_brief: 'Project brief',
     deleteBoard: 'Delete board', confirmDeleteBoard: 'Delete the board "{t}" with all its ideas?',
     providers: 'Providers', apiKey: 'API key', baseUrl: 'Address', test: 'Test', testOk: '{n} models', keyFrom_browser: 'key here',
-    keyFrom_env: 'key from environment', keyFrom_gh: 'token from gh', keyMissing: 'no key', local: 'local',
+    keyFrom_env: 'key from environment', keyMissing: 'no key', local: 'local',
     projectsRoot: 'Folder for Claude Code projects', globalBudget: 'Global limit, USD per day', spend: 'Spent: ${today} today · ${total} in total',
     settingsNote: 'Everything here is stored in the browser (localStorage). The server keeps settings in memory and never writes keys to disk.',
     settingsSaved: 'Settings saved',

@@ -31,9 +31,7 @@ Each board has a **goal** that every step works toward. Seed it with a thought, 
 - **Exhibition mode.** Fullscreen, the camera follows new ideas, and visitors type seeds. It runs together with automatic mode.
 - **Providers per role.** Every role has its own model, written `provider:model`. The roles are distill, branch, cross, judge, summary, research scout, X scout and project brief.
   - **Hosted:** OpenRouter, Anthropic (official SDK) and OpenAI.
-  - **Copilot routes:**
-    - GitHub Models stands in for GitHub Copilot, which has no public completion API.
-    - Azure OpenAI / AI Foundry stands in for Microsoft Copilot, for the same reason.
+  - **Copilot models:** neither GitHub Copilot nor Microsoft Copilot has a completion API for apps, and GitHub Models was retired on 30 July 2026. GitHub points to Microsoft Foundry, so the models behind both Copilots are reached through the Azure OpenAI / Microsoft Foundry provider.
   - **Local:** Ollama, MLX (`mlx_lm.server`), LM Studio, or any OpenAI-compatible URL.
 - **Swedish and English** interface. Generated text follows the language of its seed.
 
@@ -48,7 +46,7 @@ npm test             # 50 tests, fake LLM, no network
 npm run calibrate    # real judge vs. reference ideas (~$0.07); -- --model ollama:qwen3:8b for others
 ```
 
-All app settings live in the browser (localStorage), including API keys, models per role, provider addresses, the projects folder and the global budget. The browser pushes them to the local server, which keeps them in memory only and never writes keys to disk. Environment variables (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN` or `gh auth token`, `AZURE_OPENAI_API_KEY`) work as a fallback.
+All app settings live in the browser (localStorage), including API keys, models per role, provider addresses, the projects folder and the global budget. The browser pushes them to the local server, which keeps them in memory only and never writes keys to disk. Environment variables (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`) work as a fallback.
 
 The server listens on 127.0.0.1 only. There is no login, and keys pass through it, so **do not expose it** as is.
 
