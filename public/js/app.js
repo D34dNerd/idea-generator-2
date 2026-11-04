@@ -889,7 +889,14 @@ function renderAll() {
 
 function wire() {
   $('#seedbar').addEventListener('submit', seedFromBar);
-  $('#board-menu-btn').addEventListener('click', (e) => { e.stopPropagation(); $('#board-menu').hidden = !$('#board-menu').hidden; });
+  $('#board-menu-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const menu = $('#board-menu');
+    const r = e.currentTarget.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, r.left)}px`;
+    menu.style.top = `${r.bottom + 6}px`;
+    menu.hidden = !menu.hidden;
+  });
   document.addEventListener('click', (e) => { if (!$('#board-menu').contains(e.target)) $('#board-menu').hidden = true; });
   $('#board-title').addEventListener('change', (e) => e.target.value.trim() && patchBoard({ title: e.target.value }));
   $('#board-goal').addEventListener('change', (e) => patchBoard({ goal: e.target.value }));
