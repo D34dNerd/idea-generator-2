@@ -20,6 +20,8 @@ const WEAK = [
   'Använd AI för att förbättra vården',
   'Make cities greener',
   'Solpaneler på taken',
+  'Um aplicativo para organizar tarefas',
+  'Usar blockchain na educação',
 ];
 
 const STRONG = [
@@ -28,6 +30,8 @@ const STRONG = [
   'Skolbussen som paketbil: Landsbygdens skolbussar tar paket och apotekspåsar i ett låst bagageutrymme mellan morgon- och eftermiddagsturen, så att glesbygden får dagliga leveranser utan nya fordon.',
   "Pothole map from bus suspensions: accelerometers already fitted in city buses flag repeated jolts at the same GPS spot, and the road department gets a ranked repair list every morning.",
   "Receipt-to-swap coach: the grocery chain's loyalty app turns each receipt into three concrete swaps for the next shop that cut saturated fat, each costing the same or less.",
+  'Feira que avisa o fim do estoque: feirantes registram por WhatsApp o que sobrou às 11h, e um robô manda aos moradores do bairro uma lista de xepa com desconto, reduzindo o desperdício no fim da feira.',
+  'Agentes de saúde como sensores de dengue: os agentes comunitários fotografam caixas d\'água e calhas nas visitas que já fazem, e o mapa da prefeitura prioriza os quarteirões com mais focos antes da estação chuvosa.',
 ];
 
 const modelArg = process.argv.indexOf('--model');

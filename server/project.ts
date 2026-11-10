@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import type { ChatFn, Lang } from './llm.ts';
+import { LANG_NAME, type ChatFn, type Lang } from './llm.ts';
 import { medal, scoreSum } from '../public/js/score.js';
 
 export type Brief = {
@@ -58,7 +58,6 @@ const BRIEF_SCHEMA = {
   additionalProperties: false,
 };
 
-const LANG_NAME: Record<Lang, string> = { sv: 'Swedish', en: 'English' };
 const fmt = (i: { title: string; pitch: string }) => (i.pitch ? `${i.title}: ${i.pitch}` : i.title);
 
 export function slugify(s: string) {
@@ -89,7 +88,7 @@ export async function writeBrief(a: {
     a.goal.trim() ? `The goal of the board it came from: ${a.goal.trim()}` : '',
     sum != null ? `Jury verdict: originality ${a.idea.originality}, feasibility ${a.idea.feasibility}, impact ${a.idea.impact} (of 5). ${a.idea.reason ?? ''}` : '',
     a.lineage.length ? `It grew out of these ideas:\n${a.lineage.map((i) => `- ${fmt(i)}`).join('\n')}` : '',
-    `Write in the language of the idea; if that is unclear, in ${LANG_NAME[a.lang]}. If Swedish, write idiomatic Swedish. The slug is always ASCII.`,
+    `Write in the language of the idea; if that is unclear, in ${LANG_NAME[a.lang]}. If Swedish, write idiomatic Swedish; if Portuguese, natural Brazilian Portuguese. The slug is always ASCII.`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -153,6 +152,22 @@ const L = {
     ],
     start: 'Getting started', then: 'Then say: "Read CLAUDE.md and propose a plan for the first step."',
     vaultIntro: 'Working notes for the project. This folder is gitignored.',
+  },
+  pt: {
+    born: 'Este projeto nasceu num quadro de ideias do Gerador de Ideias', brief: 'Este arquivo é o brief: leia antes de começar e mantenha atualizado conforme as decisões forem tomadas.',
+    idea: 'A ideia', goal: 'Objetivo do quadro', verdict: 'Veredito do júri', o: 'Originalidade', f: 'Viabilidade', i: 'Impacto', handset: 'Medalha definida à mão',
+    problem: 'Problema', audience: 'Para quem é', mvp: 'MVP: o menor build que testa o núcleo', out: 'Fora da primeira versão', stack: 'Stack sugerida',
+    steps: 'Primeiros passos', questions: 'Perguntas em aberto', risks: 'Riscos', origin: 'De onde a ideia veio', source: 'fonte',
+    kinds: { seed: 'Semente', expand: 'Ramificação', combine: 'Cruzamento', guest: 'Convidada' } as Record<string, string>, fromBoard: 'do quadro',
+    agreements: 'Regras de trabalho',
+    rules: [
+      'Construa primeiro a menor versão que testa o mecanismo central; só adicione complexidade quando ela funcionar.',
+      'Verifique cada passo rodando, não só lendo o código.',
+      'Pergunte antes de qualquer coisa que custe dinheiro (APIs pagas) ou publique algo.',
+      'Anotações e ideias ficam em `vault/` (Obsidian), que nunca entra no commit.',
+    ],
+    start: 'Para começar', then: 'Depois diga: "Leia o CLAUDE.md e proponha um plano para o primeiro passo."',
+    vaultIntro: 'Anotações de trabalho do projeto. Esta pasta está no gitignore.',
   },
 };
 const MEDAL = ['', ' 🥉', ' 🥈', ' 🥇'];

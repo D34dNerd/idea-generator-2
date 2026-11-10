@@ -4,6 +4,7 @@
 // its jury guidance, its researchers, its autopilot pace. Templates only seed
 // a new board's flow; editing a board never changes another board.
 import { DatabaseSync } from 'node:sqlite';
+import { toLang, type Lang } from './llm.ts';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS templates (
@@ -141,8 +142,8 @@ export type BoardConfig = {
   flow: Flow;
   judgeGuidance: string;
   researchers: { x: { enabled: boolean; focus: string }; research: { enabled: boolean; focus: string } };
-  /** Fallback language for generated text ('sv' | 'en'); ideas otherwise follow their seed's language. */
-  lang: 'sv' | 'en';
+  /** Fallback language for generated text; ideas otherwise follow their seed's language. */
+  lang: Lang;
   /** manual: people drive. auto: the server evolves the board on its own, within the limits below. */
   mode: 'manual' | 'auto';
   /** Seconds between autopilot steps (pace). */
@@ -202,7 +203,7 @@ export function mergeConfig(base: BoardConfig, raw: any): BoardConfig {
         focus: s(rr.focus, 300, base.researchers.research.focus),
       },
     },
-    lang: r.lang === 'en' || r.lang === 'sv' ? r.lang : base.lang,
+    lang: toLang(r.lang, base.lang),
     mode: r.mode === 'auto' || r.mode === 'manual' ? r.mode : base.mode,
     autopilotSeconds: Number.isFinite(secs) ? Math.min(3600, Math.max(3, Math.round(secs))) : base.autopilotSeconds,
     rate: {

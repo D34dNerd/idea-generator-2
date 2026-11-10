@@ -1,4 +1,4 @@
-// Swedish and English. The interface language is per browser; generated text
+// Swedish, English and Brazilian Portuguese. The interface language is per browser; generated text
 // follows the language of its seed (the board's language is only a fallback).
 
 const DICT = {
@@ -203,19 +203,125 @@ const DICT = {
     err_too_few: 'The summary needs at least two ideas.', err_generic: 'Something went wrong: {m}',
     firstRun: 'Welcome! Start with a board and a goal.',
   },
+  pt: {
+    appName: 'Gerador de Ideias',
+    seedPlaceholder: 'Escreva uma ideia ou cole um link … (Enter)',
+    readingPage: 'Lendo a página …',
+    thinking: 'Pensando …',
+    boards: 'Quadros',
+    newBoard: 'Novo quadro',
+    goal: 'Objetivo',
+    goalPlaceholder: 'ex.: produto audiovisual inovador para interação em espaços públicos',
+    noGoal: 'Sem objetivo ainda – clique para definir a direção',
+    title: 'Nome',
+    template: 'Modelo de fluxo',
+    create: 'Criar',
+    cancel: 'Cancelar',
+    save: 'Salvar',
+    close: 'Fechar',
+    delete: 'Excluir',
+    manual: 'Manual',
+    auto: 'Automático',
+    leads: 'Exploração',
+    dashboard: 'Tendências',
+    exhibit: 'Exposição',
+    export: 'Exportar',
+    boardSettings: 'Configurações do quadro',
+    appSettings: 'Configurações',
+    fit: 'Mostrar tudo',
+    kind_seed: 'Semente', kind_expand: 'Ramificação', kind_combine: 'Cruzamento', kind_guest: 'Convidada',
+    generation: 'geração {n}',
+    fromBoard: 'do quadro {b}',
+    notJudged: 'Ainda não avaliada',
+    judging: 'O júri está lendo …',
+    originality: 'Originalidade', feasibility: 'Viabilidade', impact: 'Impacto',
+    expand: 'Ramificar', expandHint: 'Três ideias novas que nascem desta',
+    combineWith: 'Cruzar com …', combinePick: 'Clique na ideia para cruzar (Esc cancela). Você também pode arrastar uma ideia sobre outra.',
+    rejudge: 'Avaliar de novo',
+    medal: 'Medalha', medalAuto: 'Júri',
+    announce: 'Anunciar', announceHint: 'Enviar a ideia como convidada para outros quadros, onde ela pode cruzar com as ideias de lá',
+    spinoff: 'Novo quadro a partir da ideia', spinoffHint: 'Refinar a ideia num quadro próprio, com ela como objetivo',
+    project: 'Projeto Claude Code', projectHint: 'Criar uma pasta de projeto com um CLAUDE.md de onde o Claude Code pode começar',
+    projectMaking: 'Escrevendo o brief …',
+    revealProject: 'Mostrar na pasta', copyStart: 'Copiar comando de início', copied: 'Copiado',
+    source: 'Fonte', spinoffs: 'Quadros próprios', keywords: 'Palavras-chave',
+    deleteIdea: 'Excluir ideia', confirmDelete: 'Excluir "{t}"?',
+    overview: 'Visão geral', topIdeas: 'Melhores ideias', noIdeasYet: 'O quadro está vazio. Escreva uma semente abaixo ou traga achados do painel à esquerda.',
+    evolution: 'Evolução', evoLine: 'Geração {g} · média {first} → {latest} · melhor {best}', evoShort: 'Geração {g} · melhor {best}',
+    summary: 'Resumo', summarize: 'Resumir o quadro', resummarize: 'Atualizar', summaryStale: '{n} ideias novas desde o resumo',
+    themes: 'Temas', strongest: 'Mais fortes', gaps: 'Lacunas', nextSteps: 'Próximos passos',
+    leadsX: 'Tendências no X', leadsResearch: 'Pesquisa em IA', refresh: 'Buscar', refreshing: 'Explorando …',
+    leadsEmpty: 'Nada buscado ainda. Os exploradores buscam a partir do objetivo do quadro.', addAsSeed: '+ Semente', onBoard: 'no quadro',
+    leadsDropped: '{n} achados sem fonte verificada foram descartados', leadsNone: 'Nenhum achado verificado desta vez',
+    researcherOff: 'Este explorador está desligado nas configurações do quadro.',
+    dragLead: 'Arraste para o quadro ou clique em + Semente',
+    ap_manual: 'Manual', ap_running: 'Trabalhando …', ap_pace: 'Próximo passo em {s}', ap_hourly: 'Limite por hora atingido · volta às {time}',
+    ap_board_budget: 'Orçamento do dia esgotado · volta amanhã', ap_global_budget: 'Orçamento global do dia esgotado · volta amanhã',
+    ap_backoff: 'Erro · tentando de novo em {s}', ap_error: 'Erro: {m}', ap_idle: 'Esperando', ap_idle_empty: 'Esperando uma semente',
+    ap_idle_nothing: 'Nada mais a fazer agora',
+    apMeta: '{n} passos na última hora · ${usd} hoje',
+    general: 'Geral', language: 'Idioma (reserva para texto gerado)', flow: 'Fluxo de criação', flowName: 'Nome do fluxo',
+    systemPrompt: 'Papel (prompt de sistema)', expandPrompt: 'Ramificação', combinePrompt: 'Cruzamento', applyTemplate: 'Usar modelo',
+    saveAsTemplate: 'Salvar como modelo', templateSaved: 'Modelo salvo',
+    jury: 'Júri', judgeGuidance: 'Orientações extras para o júri', judgeGuidancePh: 'ex.: Valorize soluções que funcionam ao ar livre o ano todo.',
+    autoProject: 'O júri transforma ideias de ouro em projetos Claude Code',
+    researchers: 'Exploradores', xScout: 'Tendências no X (Grok via OpenRouter)', researchScout: 'Pesquisa em IA (Hugging Face)', focus: 'Foco extra',
+    focusPh: 'além do objetivo, ex.: "instalações sonoras"',
+    autopilot: 'Piloto automático', mode: 'Modo', pace: 'Segundos entre passos', stepsPerHour: 'Máx. de passos por hora', usdPerDay: 'Máx. de USD por dia',
+    rateNote: 'Os limites em dólar só contam provedores que informam custo (OpenRouter, Anthropic). 0 = só modelos gratuitos (locais).',
+    models: 'Modelos', modelsBoardNote: 'Campo vazio = configuração do app.',
+    role_distill: 'Destilar semente', role_expand: 'Ramificar', role_combine: 'Cruzar', role_judge: 'Júri', role_summary: 'Resumir',
+    role_research: 'Explorador de pesquisa', role_x: 'Explorador do X', role_brief: 'Brief do projeto',
+    deleteBoard: 'Excluir quadro', confirmDeleteBoard: 'Excluir o quadro "{t}" com todas as ideias?',
+    providers: 'Provedores', apiKey: 'Chave de API', baseUrl: 'Endereço', test: 'Testar', testOk: '{n} modelos', keyFrom_browser: 'chave aqui',
+    keyFrom_env: 'chave do ambiente', keyMissing: 'sem chave', local: 'local',
+    projectsRoot: 'Pasta dos projetos Claude Code', globalBudget: 'Limite global, USD por dia', spend: 'Gasto: ${today} hoje · ${total} no total',
+    settingsNote: 'Tudo aqui fica salvo no navegador (localStorage). O servidor guarda as configurações só na memória e nunca grava chaves no disco.',
+    settingsSaved: 'Configurações salvas',
+    needKey: 'Adicione uma chave de API para {p} em Configurações.',
+    calibrateNote: 'Trocou o modelo do júri? Rode npm run calibrate -- --model <modelo> para conferir se ele ainda separa fraco de forte.',
+    announceTitle: 'Anunciar "{t}"', allBoards: 'Todos os quadros', announced: 'Convidada em {n} quadros', announceNone: 'Já é convidada lá',
+    noOtherBoards: 'Ainda não há outros quadros.',
+    dashTitle: 'Tendências em todos os quadros', days: '{n} dias', statIdeas: 'Ideias', statBoards: 'Quadros', statKeywords: 'Palavras-chave',
+    statRecent: 'Ideias novas, {n} dias', keyword: 'Palavra-chave', trend: 'Por dia', count: 'Ideias', change: 'Vs. período anterior',
+    onBoards: 'Quadros', meanJury: 'Média do júri', boardKeywords: 'Palavras-chave por quadro', ideasWith: 'Ideias sobre "{k}"',
+    dashEmpty: 'Nenhuma palavra-chave ainda. Elas aparecem conforme o júri avalia ideias.', tableNote: 'Passe o mouse sobre uma linha para ver o valor do dia.',
+    report: 'Relatório', reportNew: '{n} novas', reportMedals: 'Medalhas', reportProjects: 'Projetos Claude Code',
+    reportSpent: 'Gasto, {n} dias', conclusions: 'Conclusões', writeConclusions: 'Escrever conclusões',
+    rewriteConclusions: 'Reescrever', conclusionsHint: 'Deixe a IA ler todos os quadros e escrever as conclusões: percepções, as ideias que mais valem a pena seguir, oportunidades e próximos passos.',
+    conclusionsFrom: 'Escritas em {date} · cobriram {n} dias', insights: 'Percepções', standouts: 'Mais vale a pena seguir', opportunities: 'Oportunidades',
+    noProjects: 'Nenhum projeto ainda. Ideias de ouro viram projetos sozinhas, ou clique em → Projeto Claude Code numa ideia.',
+    ideasWord: 'ideias', summaryOld: 'mais antigo que o quadro', noBoardSummary: 'Nenhum resumo ainda.',
+    gold: '🥇 Ouro: {t}', projectCreated: 'Projeto Claude Code criado: {p}', exhibitExit: 'Esc sai do modo exposição',
+    err_no_key: 'Sem chave de API: {m}', err_bad_key: 'A chave não foi aceita: {m}', err_unreachable: 'Não foi possível alcançar o serviço: {m}',
+    err_no_search: '{m}', err_url_unreadable: 'Não foi possível ler o link: {m}', err_url_no_text: 'A página tem pouco texto legível.',
+    err_too_few: 'O resumo precisa de pelo menos duas ideias.', err_generic: 'Algo deu errado: {m}',
+    firstRun: 'Bem-vindo! Comece com um quadro e um objetivo.',
+  },
 };
 
-let lang = localStorage.getItem('ideagen.lang') || (navigator.language?.startsWith('sv') ? 'sv' : 'en');
+export const LANGS = ['pt', 'en', 'sv'];
+const LANG_LABEL = { pt: 'Português', en: 'English', sv: 'Svenska' };
+const LOCALE = { pt: 'pt-BR', en: 'en-GB', sv: 'sv-SE' };
+const browserLang = () => LANGS.find((l) => navigator.language?.startsWith(l)) ?? 'en';
+const stored = localStorage.getItem('ideagen.lang');
+let lang = LANGS.includes(stored) ? stored : browserLang();
 
 export const getLang = () => lang;
+/** The Intl locale for dates and numbers in the current language. */
+export const getLocale = () => LOCALE[lang];
+/** The language's own name, e.g. for a picker. */
+export const langLabel = (l) => LANG_LABEL[l];
+/** The language after the current one, for the toggle button. */
+export const nextLang = () => LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length];
 export function setLang(l) {
-  lang = l === 'en' ? 'en' : 'sv';
+  lang = LANGS.includes(l) ? l : 'en';
   localStorage.setItem('ideagen.lang', lang);
   document.documentElement.lang = lang;
 }
 
 export function t(key, vars = {}) {
-  let s = DICT[lang][key] ?? DICT.sv[key] ?? key;
+  let s = DICT[lang][key] ?? DICT.en[key] ?? DICT.sv[key] ?? key;
   for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v));
   return s;
 }

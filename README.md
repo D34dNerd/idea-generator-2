@@ -33,7 +33,7 @@ Each board has a **goal** that every step works toward. Seed it with a thought, 
   - **Hosted:** OpenRouter, Anthropic (official SDK) and OpenAI.
   - **Copilot models:** neither GitHub Copilot nor Microsoft Copilot has a completion API for apps, and GitHub Models was retired on 30 July 2026. GitHub points to Microsoft Foundry, so the models behind both Copilots are reached through the Azure OpenAI / Microsoft Foundry provider.
   - **Local:** Ollama, MLX (`mlx_lm.server`), LM Studio, or any OpenAI-compatible URL.
-- **Swedish and English** interface. Generated text follows the language of its seed.
+- **Swedish, English and Brazilian Portuguese** interface. Generated text follows the language of its seed.
 
 ## Run
 

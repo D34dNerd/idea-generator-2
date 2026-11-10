@@ -8,7 +8,13 @@ import { clampScore } from '../public/js/score.js';
 import type { ChatFn } from './providers.ts';
 export type { ChatFn, ChatRequest } from './providers.ts';
 
-export type Lang = 'sv' | 'en';
+export type Lang = 'sv' | 'en' | 'pt';
+export const LANGS: readonly Lang[] = ['sv', 'en', 'pt'];
+/** An untrusted language code, or the fallback when it is not one we support. */
+export const toLang = (v: unknown, fallback: Lang = 'sv'): Lang => (LANGS.includes(v as Lang) ? (v as Lang) : fallback);
+/** Model-facing name of each language, with the note on writing it well. */
+export const LANG_NAME: Record<Lang, string> = { sv: 'Swedish', en: 'English', pt: 'Brazilian Portuguese' };
+const IDIOM: Record<Lang, string> = { sv: ' (idiomatic Swedish)', en: '', pt: ' (natural Brazilian Portuguese)' };
 type Pitch = { title: string; pitch: string };
 type Flow = { system: string; expand: string; combine: string };
 type BoardCtx = { goal: string };
@@ -65,12 +71,11 @@ const JUDGE_SCHEMA = {
 
 // ---------------------------------------------------------------- prompts
 
-const LANG_NAME: Record<Lang, string> = { sv: 'Swedish', en: 'English' };
-
 function languageRule(lang: Lang) {
   return [
     `Write in the same language as the source idea(s). If that is unclear or mixed, write in ${LANG_NAME[lang]}.`,
     'If you write Swedish, write idiomatic Swedish: correct agreement, no invented compound words, no anglicisms where a Swedish word exists.',
+    'If you write Portuguese, write natural Brazilian Portuguese: correct agreement and accents, no anglicisms where a common Portuguese word exists.',
   ].join(' ');
 }
 
@@ -254,7 +259,7 @@ export function makeLLM(chat: ChatFn) {
         a.board.goal.trim() ? `The board's goal: ${a.board.goal.trim()}` : 'The board has no stated goal.',
         `The ${a.ideas.length} ideas on the board, strongest first:\n${lines}`,
         'Summarise the board for the people working on it: the themes, the strongest ideas, the gaps toward the goal, and what to do next. Be specific and honest; do not praise.',
-        `Write in ${LANG_NAME[a.lang]}${a.lang === 'sv' ? ' (idiomatic Swedish)' : ''}. Keep idea titles exactly as given.`,
+        `Write in ${LANG_NAME[a.lang]}${IDIOM[a.lang]}. Keep idea titles exactly as given.`,
       ].join('\n\n');
       const { value, costUsd } = await chat({
         model: a.model,
@@ -300,7 +305,7 @@ export function makeLLM(chat: ChatFn) {
         `These are the idea boards and what they produced (the report covers the last ${a.days} days):`,
         blocks,
         'Write the conclusions of the report for the people running the boards: what holds across boards, which ideas are most worth pursuing, where boards should cross-breed, and what to do next. Be specific and honest; do not praise.',
-        `Write in ${LANG_NAME[a.lang]}${a.lang === 'sv' ? ' (idiomatic Swedish)' : ''}. Keep idea and board titles exactly as given.`,
+        `Write in ${LANG_NAME[a.lang]}${IDIOM[a.lang]}. Keep idea and board titles exactly as given.`,
       ].join('\n\n');
       const { value, costUsd } = await chat({
         model: a.model,

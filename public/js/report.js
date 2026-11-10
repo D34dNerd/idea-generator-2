@@ -4,7 +4,7 @@
 
 import { api } from './api.js';
 import { $, h, clear, toast } from './dom.js';
-import { t, getLang, errorText } from './i18n.js';
+import { t, getLang, getLocale, errorText } from './i18n.js';
 
 const MEDAL_ICON = ['', '🥉', '🥈', '🥇'];
 const S = { days: 30, onOpenIdea: null, onOpenBoard: null };
@@ -69,7 +69,7 @@ function render(r) {
       ),
       s
         ? [
-            h('p', { class: 'muted small' }, t('conclusionsFrom', { date: new Date(s.createdAt.replace(' ', 'T') + 'Z').toLocaleString(getLang() === 'sv' ? 'sv-SE' : 'en-GB'), n: s.days })),
+            h('p', { class: 'muted small' }, t('conclusionsFrom', { date: new Date(s.createdAt.replace(' ', 'T') + 'Z').toLocaleString(getLocale()), n: s.days })),
             h('p', { class: 'headline' }, s.headline),
             h('div', { class: 'grid2' },
               h('div', {}, h('h4', {}, t('insights')), list(s.insights)),

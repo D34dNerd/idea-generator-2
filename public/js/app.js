@@ -2,7 +2,7 @@
 
 import { api, follow } from './api.js';
 import { $, h, clear, toast, debounce } from './dom.js';
-import { t, getLang, setLang, applyI18n, errorText } from './i18n.js';
+import { t, getLang, getLocale, setLang, nextLang, langLabel, LANGS, applyI18n, errorText } from './i18n.js';
 import { Graph, KIND_COLORS } from './graph.js';
 import { loadSettings, saveSettings, pushSettings, ROLES, PROVIDER_IDS, providersInUse, DEFAULTS } from './settings.js';
 import { medal, scoreSum, fitness, CRITERIA } from './score.js';
@@ -18,9 +18,11 @@ const S = {
 };
 const fail = (e) => toast(errorText(e), 'error', 8000);
 /** Built-in template names are bilingual ("Uppfinnaren · Inventor"); show the half that matches the UI. */
+const PT_TEMPLATE = { Inventor: 'Inventor', Business: 'Negócios', Sustainability: 'Sustentabilidade', 'Wild card': 'Curinga' };
 const localName = (name) => {
   const m = /^(.+?) · (.+)$/.exec(name);
-  return m ? (getLang() === 'en' ? m[2] : m[1]) : name;
+  if (!m) return name;
+  return { sv: m[1], en: m[2], pt: PT_TEMPLATE[m[2]] ?? m[2] }[getLang()];
 };
 const ideaList = () => [...S.ideas.values()];
 
@@ -299,7 +301,7 @@ function renderAutopilot() {
     return;
   }
   const secs = st.until ? Math.max(0, Math.ceil((st.until - Date.now()) / 1000)) : 0;
-  const time = st.until ? new Date(st.until).toLocaleTimeString(getLang() === 'sv' ? 'sv-SE' : 'en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+  const time = st.until ? new Date(st.until).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }) : '';
   const key = st.state === 'idle' ? (st.last === 'empty' ? 'ap_idle_empty' : st.last === 'nothing_to_do' ? 'ap_idle_nothing' : 'ap_idle') : `ap_${st.state}`;
   chip.textContent = t(key, { s: `${secs} s`, time, m: st.message ?? '' });
   chip.title = t('apMeta', { n: st.stepsLastHour ?? 0, usd: (st.spentToday ?? S.spentToday ?? 0).toFixed(3) });
@@ -629,7 +631,7 @@ async function boardSettingsDialog() {
   const inp = (value, props = {}) => h('input', { value, ...props });
   const area = (value, rows = 3, props = {}) => h('textarea', { rows, ...props }, value);
   const title = inp(b.title), goal = area(b.goal, 2, { placeholder: t('goalPlaceholder') });
-  const lang = h('select', {}, h('option', { value: 'sv', selected: c.lang === 'sv' }, 'Svenska'), h('option', { value: 'en', selected: c.lang === 'en' }, 'English'));
+  const lang = h('select', {}, LANGS.map((l) => h('option', { value: l, selected: c.lang === l }, langLabel(l))));
   const flowName = inp(c.flowName), sys = area(c.flow.system, 3), exp = area(c.flow.expand, 3), comb = area(c.flow.combine, 3);
   const tplSel = h('select', {}, S.templates.map((x) => h('option', { value: x.id }, localName(x.name))));
   const guidance = area(c.judgeGuidance, 2, { placeholder: t('judgeGuidancePh') });
@@ -884,7 +886,7 @@ function renderAll() {
   renderBoardMenu();
   renderPanel();
   renderLeads();
-  $('#lang-btn').textContent = getLang() === 'sv' ? 'EN' : 'SV';
+  $('#lang-btn').textContent = nextLang().toUpperCase();
 }
 
 function wire() {
@@ -914,7 +916,7 @@ function wire() {
   $('#export-btn').addEventListener('click', exportBoard);
   $('#board-settings-btn').addEventListener('click', boardSettingsDialog);
   $('#app-settings-btn').addEventListener('click', appSettingsDialog);
-  $('#lang-btn').addEventListener('click', () => { setLang(getLang() === 'sv' ? 'en' : 'sv'); renderAll(); });
+  $('#lang-btn').addEventListener('click', () => { setLang(nextLang()); renderAll(); });
   $('#zoom-in').addEventListener('click', () => graph.zoomBy(1.25));
   $('#zoom-out').addEventListener('click', () => graph.zoomBy(0.8));
   $('#fit-btn').addEventListener('click', () => graph.fit());
