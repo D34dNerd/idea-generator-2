@@ -75,7 +75,7 @@ export function slugify(s: string) {
 
 export function expandHome(p: string) {
   const t = p.trim();
-  return t === '~' || t.startsWith('~/') ? join(homedir(), t.slice(1)) : t;
+  return t === '~' || t.startsWith('~/') || t.startsWith('~\\') ? join(homedir(), t.slice(1)) : t;
 }
 
 export async function writeBrief(a: {

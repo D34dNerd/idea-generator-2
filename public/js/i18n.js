@@ -107,6 +107,10 @@ const DICT = {
     err_no_search: '{m}', err_url_unreadable: 'Kunde inte läsa länken: {m}', err_url_no_text: 'Sidan har för lite läsbar text.',
     err_too_few: 'Sammanfattningen behöver minst två idéer.', err_generic: 'Något gick fel: {m}',
     firstRun: 'Välkommen! Börja med en tavla och ett mål.',
+    saveNote: 'Spara i Obsidian', saveNoteHint: 'Spara idén som en anteckning i Obsidian-valvet (uppdaterar den om den redan finns)',
+    noteSaved: 'Sparad i Obsidian: {p}', vaultRoot: 'Obsidian-valvets mapp (tomt = av)', vaultRootPh: 't.ex. C:\\Users\\namn\\Obsidian\\Valv eller ~/Obsidian/Valv',
+    vaultAuto: 'Juryn sparar idéer i valvet', vaultAutoOff: 'Bara för hand', vaultAutoSilver: 'Silver eller bättre', vaultAutoGold: 'Bara guld',
+    err_no_vault: 'Välj en mapp för Obsidian-valvet under Inställningar.',
   },
   en: {
     appName: 'Idea Generator',
@@ -202,6 +206,10 @@ const DICT = {
     err_no_search: '{m}', err_url_unreadable: 'Could not read the link: {m}', err_url_no_text: 'The page has too little readable text.',
     err_too_few: 'The summary needs at least two ideas.', err_generic: 'Something went wrong: {m}',
     firstRun: 'Welcome! Start with a board and a goal.',
+    saveNote: 'Save to Obsidian', saveNoteHint: 'Save the idea as a note in the Obsidian vault (updates it if it is already there)',
+    noteSaved: 'Saved to Obsidian: {p}', vaultRoot: 'Obsidian vault folder (empty = off)', vaultRootPh: 'e.g. C:\\Users\\name\\Obsidian\\Vault or ~/Obsidian/Vault',
+    vaultAuto: 'The jury saves ideas to the vault', vaultAutoOff: 'Only by hand', vaultAutoSilver: 'Silver or better', vaultAutoGold: 'Gold only',
+    err_no_vault: 'Choose an Obsidian vault folder under Settings.',
   },
   pt: {
     appName: 'Gerador de Ideias',
@@ -297,6 +305,10 @@ const DICT = {
     err_no_search: '{m}', err_url_unreadable: 'Não foi possível ler o link: {m}', err_url_no_text: 'A página tem pouco texto legível.',
     err_too_few: 'O resumo precisa de pelo menos duas ideias.', err_generic: 'Algo deu errado: {m}',
     firstRun: 'Bem-vindo! Comece com um quadro e um objetivo.',
+    saveNote: 'Salvar no Obsidian', saveNoteHint: 'Salvar a ideia como nota no vault do Obsidian (atualiza a nota se ela já existir)',
+    noteSaved: 'Salva no Obsidian: {p}', vaultRoot: 'Pasta do vault do Obsidian (vazio = desligado)', vaultRootPh: 'ex.: C:\\Users\\nome\\Obsidian\\Vault ou ~/Obsidian/Vault',
+    vaultAuto: 'O júri salva ideias no vault', vaultAutoOff: 'Só manualmente', vaultAutoSilver: 'Prata ou melhor', vaultAutoGold: 'Só ouro',
+    err_no_vault: 'Escolha a pasta do vault do Obsidian em Configurações.',
   },
 };
 

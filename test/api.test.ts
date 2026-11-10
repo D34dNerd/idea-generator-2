@@ -149,6 +149,31 @@ test('Brazilian Portuguese: board defaults, prompts and Markdown export', async 
   assert.ok(repo.getIdea(s.id));
 });
 
+test('Obsidian: the jury saves strong ideas to the vault; any idea can be saved by hand', async () => {
+  const board = await newBoard({ lang: 'pt', title: 'Quadro do vault' });
+  const s = await seed(board.id, 'Ideia fraca');
+  await engine.idle();
+  const { status, data: off } = await api('POST', `/api/ideas/${s.id}/note`, {});
+  assert.equal(status, 400);
+  assert.equal(off.code, 'no_vault');
+
+  const vaultRoot = mkdtempSync(join(tmpdir(), 'ideagen-vault-'));
+  settings = { ...settings, vaultRoot, vaultMinMedal: 2 };
+  const { data: manual } = await api('POST', `/api/ideas/${s.id}/note`, {});
+  assert.equal(manual.path, join(vaultRoot, 'Quadro do vault', 'Ideia fraca.md'));
+  assert.match(readFileSync(manual.path, 'utf8'), /^---\nidea_id: \d+/);
+
+  judgeScores = { originality: 4, feasibility: 4, impact: 3 }; // 11 = silver
+  const { data: j } = await api('POST', `/api/ideas/${s.id}/judge`, {});
+  assert.equal(j.note, manual.path, 'silver reaches the vault, updating the same note');
+  assert.match(readFileSync(j.note, 'utf8'), /medal: silver/);
+  settings = { ...settings, vaultMinMedal: 3 };
+  const { data: j2 } = await api('POST', `/api/ideas/${s.id}/judge`, {});
+  assert.equal(j2.note, undefined, 'gold-only: silver stays out');
+  settings = { ...settings, vaultRoot: '', vaultMinMedal: 2 };
+  judgeScores = { originality: 3, feasibility: 3, impact: 3 };
+});
+
 test('each role uses its own model: app-wide setting, overridden per board', async () => {
   const pushed = await api('PUT', '/api/runtime-settings', {
     ...settings, models: { ...settings.models, expand: 'ollama:qwen3:8b' }, keys: { openrouter: 'sk-or-secret-123' },
