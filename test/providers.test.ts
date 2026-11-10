@@ -100,6 +100,22 @@ test('OpenAI-compatible: falls back to JSON-in-prompt when structured output is 
   assert.equal(seen[2].headers.authorization, undefined, 'local providers need no key');
 });
 
+test('OpenAI-compatible: a reasoning model that fails JSON validation gets more room, then JSON in the prompt', async () => {
+  seen.length = 0;
+  const invalid = { status: 400, body: { error: { message: 'Failed to validate JSON.', code: 'json_validate_failed', failed_generation: '' } } };
+  script = (s) => (s.body.max_tokens < 4000 ? invalid : { status: 200, body: oaiAnswer('{"title":"Room"}') });
+  const chat = makeChat(() => settingsWith({ baseUrls: { custom: base } }));
+  const out = await chat({ ...req('custom:openai/gpt-oss-120b'), maxTokens: 400 });
+  assert.deepEqual(out.value, { title: 'Room' });
+  assert.deepEqual(seen.map((s) => s.body.max_tokens), [400, 4000]);
+
+  seen.length = 0;
+  script = (s) => (s.body.response_format ? invalid : { status: 200, body: oaiAnswer('{"title":"Prompt"}') });
+  const out2 = await chat({ ...req('custom:openai/gpt-oss-120b'), maxTokens: 400 });
+  assert.deepEqual(out2.value, { title: 'Prompt' });
+  assert.equal(seen.length, 3, 'more room did not help, so the schema moved into the prompt');
+});
+
 test('Azure uses an api-key header; 401 is a bad key, not a retry', async () => {
   seen.length = 0;
   script = () => ({ status: 401, body: { error: 'bad key' } });

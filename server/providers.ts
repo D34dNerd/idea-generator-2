@@ -182,6 +182,7 @@ async function openaiChat(settings: AppSettings, p: ProviderId, model: string, r
     if (r.plugins) body.plugins = r.plugins;
   }
   let lastError = '';
+  let grown = false;
   for (let attempt = 0, adjustments = 0; attempt < 3; ) {
     body.messages = [
       { role: 'system', content: r.system + (jsonMode === 'prompt' ? promptJsonRule(r.schema) : '') },
@@ -200,11 +201,19 @@ async function openaiChat(settings: AppSettings, p: ProviderId, model: string, r
       if (body.reasoning && /reasoning/i.test(text)) {
         delete body.reasoning; // this model insists on reasoning; thinking counts against max_tokens
         body.max_tokens = Math.max(body.max_tokens * 4, 4000);
+        grown = true;
         continue;
       }
       if ('temperature' in body && /temperature/i.test(text)) { delete body.temperature; continue; }
       if (body.max_tokens && /max_tokens/i.test(text) && /max_completion_tokens/i.test(text)) {
         body.max_completion_tokens = body.max_tokens; delete body.max_tokens; continue;
+      }
+      // Groq and others validate the JSON themselves. An empty failed_generation means a reasoning model
+      // spent its whole budget thinking; give it room once, then fall back to JSON in the prompt.
+      if (/json_validate_failed/i.test(text)) {
+        const room = 'max_tokens' in body ? 'max_tokens' : 'max_completion_tokens';
+        if (!grown && body[room]) { body[room] = Math.max(body[room] * 4, 4000); grown = true; continue; }
+        if (jsonMode === 'schema') { jsonMode = 'prompt'; continue; }
       }
       if (jsonMode === 'schema' && /response_format|json_schema|structured/i.test(text)) { jsonMode = 'prompt'; continue; }
     }

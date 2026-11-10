@@ -5,7 +5,7 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 ## Commands
 
 - `npm start` – server on http://localhost:8300 (`PORT`, `HOST`, `DB_FILE` override)
-- `npm test` – 57 tests (`node --test`), fake LLM and fake provider servers, no network
+- `npm test` – 58 tests (`node --test`), fake LLM and fake provider servers, no network
 - `npm run calibrate [-- --model provider:model]` – real judge against weak and strong reference ideas. It costs money. **Re-run it whenever the judge's prompt, schema or model changes.**
 
 ## Layout
@@ -33,6 +33,7 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 - **Never put integer `minimum`/`maximum` in a JSON schema.** Anthropic rejects them. Put the range in the description and clamp in code.
 - **Anthropic native: send no `temperature`.** API version 2026-10-21 rejects it. Use effort `low`. The SDK sends the key as a Bearer token.
 - **OpenRouter: send `reasoning:{enabled:false}`** and retry without it on a 400 that mentions reasoning (some models insist on reasoning).
+- **Groq (`json_validate_failed`):** reasoning models like GPT-OSS can spend the whole budget thinking and return empty JSON; retry once with 4× `max_tokens`, then fall back to JSON in the prompt.
 - **X scout:** a lead is kept only if its URL is in the search engine's `url_citation` annotations. Never trust a URL the model wrote. Only OpenRouter (Grok) can search X.
 - **App settings live in the browser's localStorage.** The server holds them in memory, and the SSE `hello` tells the browser to push them again after a restart. Board configuration lives in the DB.
 - **Dollar limits only see providers that report cost** (OpenRouter `usage.cost`, Anthropic via the price table). A limit of 0 means free models only.
