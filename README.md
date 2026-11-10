@@ -31,7 +31,7 @@ Each board has a **goal** that every step works toward. Seed it with a thought, 
   - *Report*: totals, cross-board conclusions, every project with its start command, and one card per board. Exports to Markdown.
 - **Exhibition mode.** Fullscreen, the camera follows new ideas, and visitors type seeds. It runs together with automatic mode.
 - **Providers per role.** Every role has its own model, written `provider:model`. The roles are distill, branch, cross, judge, summary, research scout, X scout and project brief.
-  - **Hosted:** OpenRouter, Anthropic (official SDK) and OpenAI.
+  - **Hosted:** OpenRouter, Anthropic (official SDK), OpenAI, Groq (`groq:openai/gpt-oss-120b`) and Google Gemini via AI Studio (`google:<model>`), each with its own key, so free tiers can be combined.
   - **Copilot models:** neither GitHub Copilot nor Microsoft Copilot has a completion API for apps, and GitHub Models was retired on 30 July 2026. GitHub points to Microsoft Foundry, so the models behind both Copilots are reached through the Azure OpenAI / Microsoft Foundry provider.
   - **Local:** Ollama, MLX (`mlx_lm.server`), LM Studio, or any OpenAI-compatible URL.
 - **Swedish, English and Brazilian Portuguese** interface. Generated text follows the language of its seed.
@@ -43,11 +43,11 @@ Needs Node 25 or newer, which runs TypeScript directly. There is no build step.
 ```bash
 npm install          # one dependency: @anthropic-ai/sdk
 npm start            # http://localhost:8300
-npm test             # 58 tests, fake LLM, no network
+npm test             # 59 tests, fake LLM, no network
 npm run calibrate    # real judge vs. reference ideas (~$0.07); -- --model ollama:qwen3:8b for others
 ```
 
-All app settings live in the browser (localStorage), including API keys, models per role, provider addresses, the projects folder and the global budget. The browser pushes them to the local server, which keeps them in memory only and never writes keys to disk. Environment variables (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`) work as a fallback.
+All app settings live in the browser (localStorage), including API keys, models per role, provider addresses, the projects folder and the global budget. The browser pushes them to the local server, which keeps them in memory only and never writes keys to disk. Environment variables (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `AZURE_OPENAI_API_KEY`) work as a fallback.
 
 The server listens on 127.0.0.1 only. There is no login, and keys pass through it, so **do not expose it** as is.
 

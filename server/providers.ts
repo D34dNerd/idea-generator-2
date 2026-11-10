@@ -9,7 +9,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { isAbsolute } from 'node:path';
 
-export type ProviderId = 'openrouter' | 'anthropic' | 'openai' | 'azure' | 'ollama' | 'mlx' | 'lmstudio' | 'custom';
+export type ProviderId = 'openrouter' | 'anthropic' | 'openai' | 'groq' | 'google' | 'azure' | 'ollama' | 'mlx' | 'lmstudio' | 'custom';
 export type Role = 'distill' | 'expand' | 'combine' | 'judge' | 'summary' | 'research' | 'x' | 'brief';
 export const ROLES: Role[] = ['distill', 'expand', 'combine', 'judge', 'summary', 'research', 'x', 'brief'];
 
@@ -60,6 +60,11 @@ export const PROVIDERS: Record<ProviderId, ProviderDef> = {
   openrouter: { label: 'OpenRouter', type: 'openai', base: 'https://openrouter.ai/api/v1', env: 'OPENROUTER_API_KEY', needsKey: true, search: true },
   anthropic: { label: 'Anthropic', type: 'anthropic', env: 'ANTHROPIC_API_KEY', needsKey: true },
   openai: { label: 'OpenAI', type: 'openai', base: 'https://api.openai.com/v1', env: 'OPENAI_API_KEY', needsKey: true },
+  groq: { label: 'Groq', type: 'openai', base: 'https://api.groq.com/openai/v1', env: 'GROQ_API_KEY', needsKey: true },
+  google: {
+    label: 'Google Gemini (AI Studio)', type: 'openai', base: 'https://generativelanguage.googleapis.com/v1beta/openai', env: 'GEMINI_API_KEY', needsKey: true,
+    note: 'Key from aistudio.google.com/apikey. Only Gemini and Gemma models; Claude on Google Cloud (Vertex AI) is not reachable with this key.',
+  },
   azure: {
     label: 'Azure OpenAI / Microsoft Foundry (Copilot models)', type: 'openai', env: 'AZURE_OPENAI_API_KEY', needsKey: true,
     note: 'Neither GitHub Copilot nor Microsoft Copilot has a completion API for apps, and GitHub Models was retired on 30 July 2026 (GitHub points to Microsoft Foundry). The models behind both Copilots are reachable here: base URL https://<resource>.openai.azure.com/openai/v1, model = deployment name.',
@@ -349,7 +354,7 @@ export async function listModels(settings: AppSettings, p: ProviderId): Promise<
     if (!base) throw new ProviderError('no_base_url', 'Set a base URL first');
     if (PROVIDERS[p].needsKey && !key) throw new ProviderError('no_key', 'No API key');
     const headers: Record<string, string> = key ? (p === 'azure' ? { 'api-key': key } : { Authorization: `Bearer ${key}` }) : {};
-    return ((await get(`${base}/models`, headers)).data ?? []).map((m: any) => m.id).sort();
+    return ((await get(`${base}/models`, headers)).data ?? []).map((m: any) => String(m.id).replace(/^models\//, '')).sort();
   } catch (e: any) {
     if (e instanceof ProviderError) throw e;
     throw new ProviderError('unreachable', `${PROVIDERS[p].label}: ${e?.cause?.code ?? e.message}`);

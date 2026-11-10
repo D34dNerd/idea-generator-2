@@ -183,3 +183,21 @@ test('model lists double as a connection test', async () => {
   assert.deepEqual(await listModels(settingsWith({ baseUrls: { mlx: base } }), 'mlx'), ['a', 'b']);
   await assert.rejects(listModels(settingsWith({ baseUrls: { mlx: 'http://127.0.0.1:1' } }), 'mlx'), (e: any) => e.code === 'unreachable');
 });
+
+test('Groq and Google are providers of their own, each with its own key', async () => {
+  seen.length = 0;
+  script = (s) =>
+    s.path.endsWith('/models') ? { status: 200, body: { data: [{ id: 'models/gemini-flash-lite' }, { id: 'models/gemma-4-31b' }] } }
+    : { status: 200, body: oaiAnswer('{"title":"Ok"}') };
+  const settings = settingsWith({ keys: { groq: 'gsk-test', google: 'AIza-test' }, baseUrls: { groq: base, google: base } });
+  const chat = makeChat(() => settings);
+  await chat(req('groq:openai/gpt-oss-120b'));
+  await chat(req('google:gemini-flash-lite'));
+  assert.equal(seen[0].headers.authorization, 'Bearer gsk-test');
+  assert.equal(seen[0].body.model, 'openai/gpt-oss-120b');
+  assert.equal(seen[1].headers.authorization, 'Bearer AIza-test');
+  assert.equal(seen[1].body.model, 'gemini-flash-lite');
+  assert.deepEqual(await listModels(settings, 'google'), ['gemini-flash-lite', 'gemma-4-31b'], 'the models/ prefix is dropped');
+  assert.equal(parseModel('groq:openai/gpt-oss-120b').provider, 'groq');
+  await assert.rejects(makeChat(() => settingsWith({}))(req('google:gemini-flash-lite')), (e: any) => e.code === 'no_key');
+});
