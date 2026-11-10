@@ -7,6 +7,7 @@
 // Environment variables are a fallback for keys.
 
 import Anthropic from '@anthropic-ai/sdk';
+import { isAbsolute } from 'node:path';
 
 export type ProviderId = 'openrouter' | 'anthropic' | 'openai' | 'azure' | 'ollama' | 'mlx' | 'lmstudio' | 'custom';
 export type Role = 'distill' | 'expand' | 'combine' | 'judge' | 'summary' | 'research' | 'x' | 'brief';
@@ -17,6 +18,10 @@ export type AppSettings = {
   baseUrls: Partial<Record<ProviderId, string>>;
   models: Record<Role, string>;
   projectsRoot: string;
+  /** Obsidian vault folder for idea notes; empty = off. */
+  vaultRoot: string;
+  /** The jury saves ideas with at least this medal to the vault (2 silver, 3 gold); 0 = only by hand. */
+  vaultMinMedal: number;
   /** Safety net across all boards, in USD per local calendar day. */
   maxUsdPerDay: number;
 };
@@ -34,6 +39,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   // Sonnet 5.5: calibrated judge, idiomatic Swedish. Grok: the only route that can search X.
   models: { distill: SONNET, expand: SONNET, combine: SONNET, judge: SONNET, summary: SONNET, research: SONNET, x: 'openrouter:x-ai/grok-4.3', brief: SONNET },
   projectsRoot: '~/Projekt/idea-projects',
+  vaultRoot: '',
+  vaultMinMedal: 2,
   maxUsdPerDay: 5,
 };
 
@@ -79,7 +86,12 @@ export function mergeAppSettings(raw: any): AppSettings {
     if (typeof raw?.baseUrls?.[p] === 'string') out.baseUrls[p] = s(raw.baseUrls[p]).replace(/\/+$/, '');
   }
   for (const r of ROLES) if (s(raw?.models?.[r], 200)) out.models[r] = s(raw.models[r], 200);
-  if (/^(~\/|\/)/.test(s(raw?.projectsRoot))) out.projectsRoot = s(raw.projectsRoot);
+  // Absolute on this machine (C:\\… on Windows, /… elsewhere) or under ~.
+  const absolute = (p: string) => /^~($|[\\/])/.test(p) || isAbsolute(p);
+  if (absolute(s(raw?.projectsRoot))) out.projectsRoot = s(raw.projectsRoot);
+  if (raw?.vaultRoot === '' || absolute(s(raw?.vaultRoot))) out.vaultRoot = s(raw.vaultRoot);
+  const vm = Number(raw?.vaultMinMedal);
+  if ([0, 1, 2, 3].includes(vm)) out.vaultMinMedal = vm;
   const max = Number(raw?.maxUsdPerDay);
   if (Number.isFinite(max) && max >= 0) out.maxUsdPerDay = Math.min(1000, max);
   return out;

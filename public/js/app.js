@@ -155,6 +155,9 @@ function onEvent(e) {
     case 'project':
       toast(t('projectCreated', { p: e.path }), 'good', 9000);
       break;
+    case 'note':
+      toast(t('noteSaved', { p: e.path }), 'good', 6000);
+      break;
     case 'spinoff':
       S.spinoffs.push({ ideaId: e.ideaId, boardId: e.boardId, title: e.title });
       renderPanelSoon();
@@ -415,6 +418,7 @@ function renderIdea(idea) {
       h('button', { class: 'btn', onclick: () => rejudge(idea.id) }, t('rejudge')),
       h('button', { class: 'btn', title: t('announceHint'), onclick: () => announceDialog(idea) }, `📣 ${t('announce')}`),
       h('button', { class: 'btn', title: t('spinoffHint'), onclick: () => spinoff(idea) }, `⤴ ${t('spinoff')}`),
+      h('button', { class: 'btn', title: t('saveNoteHint'), onclick: (ev) => saveNote(idea, ev.currentTarget) }, `📝 ${t('saveNote')}`),
     ),
     h('div', { class: 'project' },
       idea.projectPath
@@ -446,6 +450,18 @@ async function rejudge(id) {
     await api('POST', `/api/ideas/${id}/judge`, {});
   } catch (e) {
     fail(e);
+  }
+}
+
+async function saveNote(idea, btn) {
+  btn.disabled = true;
+  try {
+    const r = await api('POST', `/api/ideas/${idea.id}/note`, {});
+    toast(t('noteSaved', { p: r.path }), 'good', 6000);
+  } catch (e) {
+    fail(e);
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -759,6 +775,9 @@ function appSettingsDialog() {
   });
   const models = Object.fromEntries(ROLES.map((r) => [r, h('input', { value: s.models[r], list: 'model-list', placeholder: DEFAULTS.models[r] })]));
   const root = h('input', { value: s.projectsRoot });
+  const vault = h('input', { value: s.vaultRoot, placeholder: t('vaultRootPh') });
+  const vaultMin = h('select', {}, [[0, t('vaultAutoOff')], [2, t('vaultAutoSilver')], [3, t('vaultAutoGold')]]
+    .map(([v, label]) => h('option', { value: v, selected: s.vaultMinMedal === v }, label)));
   const budget = h('input', { type: 'number', min: 0, step: 0.5, value: s.maxUsdPerDay });
   const spend = S.providers ? t('spend', { today: S.providers.spentToday.toFixed(3), total: S.providers.spentTotal.usd.toFixed(3) }) : '';
 
@@ -769,6 +788,8 @@ function appSettingsDialog() {
     }
     for (const r of ROLES) s.models[r] = models[r].value.trim() || DEFAULTS.models[r];
     s.projectsRoot = root.value.trim() || DEFAULTS.projectsRoot;
+    s.vaultRoot = vault.value.trim();
+    s.vaultMinMedal = Number(vaultMin.value);
     s.maxUsdPerDay = Number(budget.value);
     S.settings = s;
     S.providers = await saveSettings(s);
@@ -781,6 +802,7 @@ function appSettingsDialog() {
     h('fieldset', {}, h('legend', {}, t('models')), h('div', { class: 'grid2' }, ROLES.map((r) => field(t(`role_${r}`), models[r]))),
       h('small', { class: 'muted' }, t('calibrateNote'))),
     h('fieldset', {}, h('legend', {}, 'Claude Code'), field(t('projectsRoot'), root)),
+    h('fieldset', {}, h('legend', {}, 'Obsidian'), field(t('vaultRoot'), vault), field(t('vaultAuto'), vaultMin)),
     h('fieldset', {}, h('legend', {}, t('autopilot')), field(t('globalBudget'), budget, spend)),
   ], [
     h('button', { class: 'btn', value: 'cancel' }, t('cancel')),

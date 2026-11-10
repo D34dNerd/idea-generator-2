@@ -10,6 +10,7 @@ import { makeLLM, type Lang } from './llm.ts';
 import { asUrl, fetchPage as realFetchPage } from './extract.ts';
 import { fetchPapers as realFetchPapers, researchLeads, xLeads } from './leads.ts';
 import { writeBrief, writeProject } from './project.ts';
+import { writeNote } from './vault.ts';
 import { ProviderError, type AppSettings, type ChatFn, type Role } from './providers.ts';
 import { fitness, isJudged, medal, scoreSum } from '../public/js/score.js';
 import { nextMove } from '../public/js/evolve.js';
@@ -77,7 +78,8 @@ export function createEngine(deps: Deps) {
   const { repo } = deps;
   const fetchPage = deps.fetchPage ?? realFetchPage;
   const fetchPapers = deps.fetchPapers ?? realFetchPapers;
-  const reveal = deps.reveal ?? ((p: string) => execFile('open', [p], () => {}));
+  const opener = process.platform === 'win32' ? 'explorer' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+  const reveal = deps.reveal ?? ((p: string) => execFile(opener, [p], () => {}));
   const llm = makeLLM(deps.chat);
   const bus = createBus();
   const judging = new Set<number>();
@@ -132,6 +134,19 @@ export function createEngine(deps: Deps) {
     return { idea: saved, path, existed: false };
   }
 
+  /** Save the idea as a note in the Obsidian vault (or update its note). */
+  async function saveNote(idea: Idea) {
+    const root = deps.settings().vaultRoot;
+    if (!root) throw new AppError(400, 'no_vault', 'Choose an Obsidian vault folder under Settings');
+    const board = mustBoard(idea.boardId);
+    try {
+      const path = await writeNote({ root, idea, board, parents: repo.parentsOf(idea.id), lang: board.config.lang });
+      return { idea, path };
+    } catch (e: any) {
+      throw new AppError(500, 'note_failed', e?.message ?? String(e));
+    }
+  }
+
   async function judge(ideaId: number) {
     const idea = mustIdea(ideaId);
     const board = mustBoard(idea.boardId);
@@ -144,7 +159,7 @@ export function createEngine(deps: Deps) {
         }),
       );
       repo.saveJudgement(idea.id, judgement);
-      const out: { idea: Idea; project?: string; projectError?: string } = { idea: repo.setKeywords(idea.id, judgement.keywords)! };
+      const out: { idea: Idea; project?: string; projectError?: string; note?: string; noteError?: string } = { idea: repo.setKeywords(idea.id, judgement.keywords)! };
       // The judge itself turns gold into a Claude Code project, if the board allows it.
       if (board.config.autoProjectOnGold && medal(out.idea) === 3 && !out.idea.projectPath) {
         try {
@@ -154,6 +169,16 @@ export function createEngine(deps: Deps) {
           bus.emit(board.id, { type: 'project', ideaId: idea.id, path: p.path, byJudge: true });
         } catch (e: any) {
           out.projectError = e?.message ?? String(e);
+        }
+      }
+      // Ideas the jury rates highly enough go to the Obsidian vault, if one is set.
+      const { vaultRoot, vaultMinMedal } = deps.settings();
+      if (vaultRoot && vaultMinMedal > 0 && (medal(out.idea) ?? 0) >= vaultMinMedal) {
+        try {
+          out.note = (await saveNote(out.idea)).path;
+          bus.emit(board.id, { type: 'note', ideaId: idea.id, path: out.note, byJudge: true });
+        } catch (e: any) {
+          out.noteError = e?.message ?? String(e);
         }
       }
       emitIdeas(board.id, [out.idea]);
@@ -290,6 +315,7 @@ export function createEngine(deps: Deps) {
 
     judge,
     createProject: (ideaId: number) => createProject(mustIdea(ideaId)),
+    saveNote: (ideaId: number) => saveNote(mustIdea(ideaId)),
 
     reveal(ideaId: number) {
       const idea = mustIdea(ideaId);

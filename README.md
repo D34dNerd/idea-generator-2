@@ -24,6 +24,7 @@ Each board has a **goal** that every step works toward. Seed it with a thought, 
   - *Announce* an idea to other boards. It arrives as a guest, is judged against the new board's goal, and cross-breeds there.
   - Spin an idea off into a *new board* where it is the goal.
 - **Claude Code projects.** One click, or the jury on gold, writes a folder containing `CLAUDE.md` (brief, MVP, first steps, open questions, lineage, verdict), `README.md`, `idea.json`, a gitignored `vault/`, and runs `git init`.
+- **Obsidian notes.** Set a vault folder in Settings, and ideas become notes: one `.md` per idea in a folder per board, with scores, medal and keywords as properties (keywords become tags) and parents as `[[links]]`, so the vault's graph shows the family tree. Save any idea by hand with *Save to Obsidian*, and the jury saves silver-or-better (or gold-only) ideas by itself. Saving again updates the same note.
 - **Board summary, keyword trend dashboard, report.**
   - *Summary*: themes, strongest ideas, gaps and next steps for one board.
   - *Dashboard*: keyword trends across boards, with sparklines and drill-down.
@@ -42,7 +43,7 @@ Needs Node 25 or newer, which runs TypeScript directly. There is no build step.
 ```bash
 npm install          # one dependency: @anthropic-ai/sdk
 npm start            # http://localhost:8300
-npm test             # 50 tests, fake LLM, no network
+npm test             # 57 tests, fake LLM, no network
 npm run calibrate    # real judge vs. reference ideas (~$0.07); -- --model ollama:qwen3:8b for others
 ```
 

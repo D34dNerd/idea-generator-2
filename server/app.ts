@@ -272,6 +272,7 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
     ['DELETE', /^\/api\/ideas\/(\d+)$/, ([id]) => engine.deleteIdea(+id)],
     ['POST', /^\/api\/ideas\/(\d+)\/project$/, ([id]) => engine.createProject(+id)],
     ['POST', /^\/api\/ideas\/(\d+)\/reveal$/, ([id]) => engine.reveal(+id)],
+    ['POST', /^\/api\/ideas\/(\d+)\/note$/, ([id]) => engine.saveNote(+id)],
     ['POST', /^\/api\/ideas\/(\d+)\/announce$/, ([id], b) => engine.announce(+id, b.boardIds)],
     ['POST', /^\/api\/ideas\/(\d+)\/spinoff$/, ([id]) => engine.spinoff(+id)],
 
