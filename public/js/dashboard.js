@@ -5,7 +5,7 @@
 
 import { api } from './api.js';
 import { $, h, clear, svg } from './dom.js';
-import { t, getLang, errorText } from './i18n.js';
+import { t, getLocale, errorText } from './i18n.js';
 
 const S = { days: 30, keyword: null, onOpenIdea: null, data: null };
 
@@ -35,7 +35,7 @@ async function load() {
   if (S.keyword) drill(S.keyword);
 }
 
-const fmt = (n) => new Intl.NumberFormat(getLang() === 'sv' ? 'sv-SE' : 'en-GB', { notation: 'compact' }).format(n);
+const fmt = (n) => new Intl.NumberFormat(getLocale(), { notation: 'compact' }).format(n);
 
 function tile(label, value) {
   return h('div', { class: 'tile' }, h('div', { class: 'tile-label' }, label), h('div', { class: 'tile-value' }, fmt(value)));

@@ -8,6 +8,7 @@ import { extname, join, resolve, sep } from 'node:path';
 import type { Repo, Idea, Board } from './db.ts';
 import { AppError, type Engine } from './engine.ts';
 import type { Autopilot } from './autopilot.ts';
+import { toLang, type Lang } from './llm.ts';
 import { PROVIDERS, keySource, listModels, mergeAppSettings, type AppSettings, type ProviderId } from './providers.ts';
 import { fitness, medal, scoreSum } from '../public/js/score.js';
 
@@ -69,10 +70,16 @@ const LABELS = {
     handset: 'set by hand', guest: 'Guest from board', project: 'Claude Code project',
     summary: 'Summary', strongest: 'Strongest', gaps: 'Gaps', next: 'Next steps', stale: 'The summary is older than the board',
   },
+  pt: {
+    flow: 'Fluxo', ideas: 'ideias', exported: 'Exportado', seed: 'Semente', source: 'Fonte', parents: 'Pais',
+    originality: 'Originalidade', feasibility: 'Viabilidade', impact: 'Impacto', unjudged: 'Não avaliada',
+    handset: 'definida à mão', guest: 'Convidada do quadro', project: 'Projeto Claude Code',
+    summary: 'Resumo', strongest: 'Mais fortes', gaps: 'Lacunas', next: 'Próximos passos', stale: 'O resumo é mais antigo que o quadro',
+  },
 };
 const MEDAL_ICON = ['', '🥉 ', '🥈 ', '🥇 '];
 
-export function boardMarkdown(board: Board, ideas: Idea[], edges: { from: number; to: number }[], lang: 'sv' | 'en') {
+export function boardMarkdown(board: Board, ideas: Idea[], edges: { from: number; to: number }[], lang: Lang) {
   const L = LABELS[lang];
   const byId = new Map(ideas.map((i) => [i.id, i]));
   const parents = new Map<number, Idea[]>();
@@ -131,9 +138,15 @@ const REPORT_LABELS = {
     next: 'Next steps', goal: 'Goal', best: 'Best ideas', summary: 'Summary', stale: 'older than the board', none: 'None yet.',
     start: 'Start',
   },
+  pt: {
+    title: 'Relatório', period: 'Últimos {n} dias', boards: 'quadros', ideas: 'ideias', newIdeas: 'novas', projects: 'Projetos Claude Code',
+    spent: 'Gasto', conclusions: 'Conclusões', insights: 'Percepções', standouts: 'Mais vale a pena seguir', opportunities: 'Oportunidades',
+    next: 'Próximos passos', goal: 'Objetivo', best: 'Melhores ideias', summary: 'Resumo', stale: 'mais antigo que o quadro', none: 'Nenhum ainda.',
+    start: 'Começar',
+  },
 };
 
-export function reportMarkdown(r: ReturnType<Repo['report']>, lang: 'sv' | 'en') {
+export function reportMarkdown(r: ReturnType<Repo['report']>, lang: Lang) {
   const L = REPORT_LABELS[lang];
   const m = r.totals.medals;
   const out = [
@@ -199,10 +212,10 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
     // ---- boards
     ['GET', /^\/api\/boards$/, () => ({ boards: repo.listBoards() })],
     ['POST', /^\/api\/boards$/, (_p, b) => {
-      const lang = b.lang === 'en' ? 'en' : 'sv';
+      const lang = toLang(b.lang);
       return {
         board: repo.createBoard({
-          title: str(b.title, 120) || (lang === 'en' ? 'New board' : 'Ny tavla'),
+          title: str(b.title, 120) || ({ sv: 'Ny tavla', en: 'New board', pt: 'Novo quadro' } as const)[lang],
           goal: str(b.goal, 600),
           templateId: Number.isInteger(b.templateId) ? b.templateId : null,
           config: { lang },
@@ -242,7 +255,7 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
     ['GET', /^\/api\/boards\/(\d+)\/export\.md$/, ([id], _b, url) => {
       const board = repo.getBoard(+id);
       if (!board) throw new AppError(404, 'not_found', 'Board not found');
-      const lang = url.searchParams.get('lang') === 'en' ? 'en' : 'sv';
+      const lang = toLang(url.searchParams.get('lang'));
       return { __raw: boardMarkdown(board, repo.listIdeas(board.id), repo.listEdges(board.id), lang), type: 'text/markdown; charset=utf-8' };
     }],
     ['POST', /^\/api\/boards\/(\d+)\/summary$/, ([id]) => engine.summarize(+id)],
@@ -273,9 +286,9 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
 
     // ---- report: insights, ideas and projects across all boards
     ['GET', /^\/api\/report$/, (_p, _b, url) => repo.report(daysOf(url))],
-    ['POST', /^\/api\/report\/synthesis$/, (_p, b) => engine.synthesize(Math.min(365, Math.max(1, Number(b.days) || 30)), b.lang === 'en' ? 'en' : 'sv')],
+    ['POST', /^\/api\/report\/synthesis$/, (_p, b) => engine.synthesize(Math.min(365, Math.max(1, Number(b.days) || 30)), toLang(b.lang))],
     ['GET', /^\/api\/report\.md$/, (_p, _b, url) => ({
-      __raw: reportMarkdown(repo.report(daysOf(url)), url.searchParams.get('lang') === 'en' ? 'en' : 'sv'),
+      __raw: reportMarkdown(repo.report(daysOf(url)), toLang(url.searchParams.get('lang'))),
       type: 'text/markdown; charset=utf-8',
     })],
 

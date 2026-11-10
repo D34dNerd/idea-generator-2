@@ -14,7 +14,7 @@ import type { ChatFn, Lang } from './llm.ts';
 export type LeadDraft = { title: string; summary: string; hook: string; url: string; meta: Record<string, unknown> };
 type Paper = { id: string; title: string; summary: string; published: string; upvotes: number };
 
-const LANG_NAME: Record<Lang, string> = { sv: 'idiomatic Swedish', en: 'English' };
+const LANG_NAME: Record<Lang, string> = { sv: 'idiomatic Swedish', en: 'English', pt: 'natural Brazilian Portuguese' };
 const DEFAULT_TOPIC = 'new technology, AI tools, and new ways people actually use them';
 
 const leadProps = {

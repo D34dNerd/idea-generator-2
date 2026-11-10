@@ -59,6 +59,13 @@ test('CLAUDE.md: verdict, goal, numbered steps, and lineage across boards', () =
   assert.match(md, /- Gäst \(från tavlan Ljusbordet\): \*\*Gäst\*\* G/);
 });
 
+test('CLAUDE.md in Brazilian Portuguese', () => {
+  const md = renderClaudeMd({ brief, idea, goal: 'Som', lang: 'pt', date: '2026-11-10', lineage: [] });
+  assert.match(md, /Originalidade 5 · Viabilidade 4 · Impacto 4 = 13\/15 🥇/);
+  assert.match(md, /## Objetivo do quadro\n\nSom/);
+  assert.match(md, /## Primeiros passos/);
+});
+
 test('project folders never overwrite: a taken name gets -2', async () => {
   const root = mkdtempSync(join(tmpdir(), 'ideagen-'));
   const a = await writeProject({ root, brief, idea, goal: '', lineage: [], lang: 'en', gitInit: false });

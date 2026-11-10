@@ -6,7 +6,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import type { Repo, Idea, Board } from './db.ts';
-import { makeLLM } from './llm.ts';
+import { makeLLM, type Lang } from './llm.ts';
 import { asUrl, fetchPage as realFetchPage } from './extract.ts';
 import { fetchPapers as realFetchPapers, researchLeads, xLeads } from './leads.ts';
 import { writeBrief, writeProject } from './project.ts';
@@ -381,7 +381,7 @@ export function createEngine(deps: Deps) {
     },
 
     /** The report's conclusions across every board, saved so the window opens instantly. */
-    async synthesize(days: number, lang: 'sv' | 'en') {
+    async synthesize(days: number, lang: Lang) {
       const report = repo.report(days);
       const boards = report.boards.filter((b) => b.ideaCount);
       if (!boards.length) throw new AppError(400, 'too_few', 'There are no ideas to report on yet');

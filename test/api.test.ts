@@ -134,6 +134,21 @@ test('full loop: seed → background judge → expand → combine → export', a
   judgeScores = { originality: 3, feasibility: 3, impact: 3 };
 });
 
+test('Brazilian Portuguese: board defaults, prompts and Markdown export', async () => {
+  const board = await newBoard({ lang: 'pt', goal: 'Menos carros na cidade' });
+  assert.equal(board.title, 'Novo quadro');
+  assert.equal(board.config.lang, 'pt');
+  const { data: saved } = await api('PATCH', `/api/boards/${board.id}`, { config: { lang: 'pt' } });
+  assert.equal(saved.board.config.lang, 'pt', 'pt survives config validation');
+  const s = await seed(board.id, 'Bicicletas compartilhadas');
+  await engine.idle();
+  assert.match(lastCall('judgement').user, /if unclear, in Brazilian Portuguese/);
+  const { data: md } = await api('GET', `/api/boards/${board.id}/export.md?lang=pt`);
+  assert.match(md, /^# Novo quadro/);
+  assert.match(md, /> Menos carros na cidade/);
+  assert.ok(repo.getIdea(s.id));
+});
+
 test('each role uses its own model: app-wide setting, overridden per board', async () => {
   const pushed = await api('PUT', '/api/runtime-settings', {
     ...settings, models: { ...settings.models, expand: 'ollama:qwen3:8b' }, keys: { openrouter: 'sk-or-secret-123' },
