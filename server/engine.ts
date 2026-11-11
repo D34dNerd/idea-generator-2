@@ -6,14 +6,14 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import type { Repo, Idea, Board } from './db.ts';
-import { makeLLM, type Lang } from './llm.ts';
+import { makeLLM, type JuryNotes, type Lang, type Verdict } from './llm.ts';
 import { asUrl, fetchPage as realFetchPage } from './extract.ts';
 import { fetchPapers as realFetchPapers, researchLeads, xLeads } from './leads.ts';
 import { writeBrief, writeProject } from './project.ts';
 import { writeNote } from './vault.ts';
 import { ProviderError, type AppSettings, type ChatFn, type Role } from './providers.ts';
 import { fitness, isJudged, medal, scoreSum } from '../public/js/score.js';
-import { nextMove } from '../public/js/evolve.js';
+import { DUPLICATE_AT, nextMove, overused, pairKey, similarity, wordSet } from '../public/js/evolve.js';
 
 export class AppError extends Error {
   status: number;
@@ -95,8 +95,34 @@ export function createEngine(deps: Deps) {
     return i;
   };
   const modelFor = (board: Board, role: Role) => board.config.models[role] || deps.settings().models[role];
-  const titles = (boardId: number) => repo.listIdeas(boardId).map((i) => i.title);
   const emitIdeas = (boardId: number, ideas: Idea[]) => ideas.length && bus.emit(boardId, { type: 'ideas', ideas });
+
+  // ---------------------------------------------------------------- what generators learn from the jury
+
+  const verdictOf = (i: Idea): Verdict | null =>
+    isJudged(i) ? { originality: i.originality!, feasibility: i.feasibility!, impact: i.impact!, reason: i.reason ?? '' } : null;
+
+  /** The board's jury instructions, its latest rejections (no medal), and the words it is stuck on. */
+  function juryNotes(board: Board, ideas: Idea[]): JuryNotes {
+    const rejections: string[] = [];
+    for (let n = ideas.length - 1; n >= 0 && rejections.length < 6; n--) {
+      const sum = scoreSum(ideas[n]);
+      const reason = (ideas[n].reason ?? '').trim().slice(0, 240);
+      if (sum != null && sum < 9 && reason && !rejections.includes(reason)) rejections.push(reason);
+    }
+    return { guidance: board.config.judgeGuidance, rejections, stuck: overused(ideas, board.goal) };
+  }
+
+  /** A rewording of something already on the board (or of an earlier idea in the same batch)? */
+  function isRepeat(idea: { title: string; pitch: string }, others: { title: string; pitch: string }[]) {
+    const title = idea.title.trim().toLowerCase();
+    const words = wordSet(idea);
+    // Shared-word overlap says little about a handful of words; short texts are compared by title only.
+    return others.some((o) => o.title.trim().toLowerCase() === title || (words.size >= 8 && similarity(words, o) >= DUPLICATE_AT));
+  }
+
+  // Moves that only produced repeats, so the autopilot does not make them again (until restart).
+  const barren = { expand: new Set<number>(), pairs: new Set<string>() };
 
   /** Every LLM call: spend lands on the board's ledger; failures become 502s that keep the provider's code. */
   async function call<T extends { costUsd: number }>(boardId: number, fn: () => Promise<T>): Promise<T> {
@@ -147,6 +173,20 @@ export function createEngine(deps: Deps) {
     }
   }
 
+  /** The three ideas on the board that read most like this one; its own parents are left out, so a repair is not judged as a copy. */
+  function similarTo(idea: Idea) {
+    const parents = new Set(repo.parentsOf(idea.id).map((p) => p.id));
+    const words = wordSet(idea);
+    return repo
+      .listIdeas(idea.boardId)
+      .filter((o) => o.id !== idea.id && !parents.has(o.id) && o.pitch)
+      .map((o) => ({ o, s: similarity(words, o) }))
+      .filter((x) => x.s >= 0.15)
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 3)
+      .map((x) => ({ title: x.o.title, pitch: x.o.pitch }));
+  }
+
   async function judge(ideaId: number) {
     const idea = mustIdea(ideaId);
     const board = mustBoard(idea.boardId);
@@ -155,7 +195,7 @@ export function createEngine(deps: Deps) {
       const { judgement } = await call(board.id, () =>
         llm.judge({
           model: modelFor(board, 'judge'), board, idea, lang: board.config.lang,
-          guidance: board.config.judgeGuidance, vocabulary: repo.keywordVocabulary(),
+          guidance: board.config.judgeGuidance, vocabulary: repo.keywordVocabulary(), similar: similarTo(idea),
         }),
       );
       repo.saveJudgement(idea.id, judgement);
@@ -223,9 +263,20 @@ export function createEngine(deps: Deps) {
   async function doExpand(parentId: number) {
     const parent = mustIdea(parentId);
     const board = mustBoard(parent.boardId);
-    const { ideas } = await call(board.id, () =>
-      llm.expand({ model: modelFor(board, 'expand'), flow: board.config.flow, board, idea: parent, existingTitles: titles(board.id), lang: board.config.lang }),
+    const onBoard = repo.listIdeas(board.id);
+    const { ideas: drafted } = await call(board.id, () =>
+      llm.expand({
+        model: modelFor(board, 'expand'), flow: board.config.flow, board, idea: parent, existingTitles: onBoard.map((i) => i.title),
+        lang: board.config.lang, verdict: verdictOf(parent), jury: juryNotes(board, onBoard),
+      }),
     );
+    // Repeats are dropped before they cost a judgement and a place on the board.
+    const ideas: typeof drafted = [];
+    for (const d of drafted) if (!isRepeat(d, [...onBoard, ...ideas])) ideas.push(d);
+    if (!ideas.length) {
+      barren.expand.add(parent.id);
+      throw new AppError(409, 'repeat', 'The model only repeated ideas that are already on the board');
+    }
     const spots = arcPositions(parent, repo.parentsOf(parent.id)[0] ?? null, ideas.length);
     const created = ideas.map((i, n) =>
       repo.insertIdea({ boardId: board.id, ...i, kind: 'expand', x: spots[n].x, y: spots[n].y, generation: parent.generation + 1 }, [parent.id]),
@@ -242,9 +293,17 @@ export function createEngine(deps: Deps) {
     const a = mustIdea(aId);
     const c = mustIdea(bId);
     if (a.boardId !== board.id || c.boardId !== board.id) throw new AppError(400, 'bad_pair', 'Ideas belong to another board');
+    const onBoard = repo.listIdeas(board.id);
     const { idea } = await call(board.id, () =>
-      llm.combine({ model: modelFor(board, 'combine'), flow: board.config.flow, board, a, b: c, existingTitles: titles(board.id), lang: board.config.lang }),
+      llm.combine({
+        model: modelFor(board, 'combine'), flow: board.config.flow, board, a, b: c, existingTitles: onBoard.map((i) => i.title),
+        lang: board.config.lang, verdicts: [verdictOf(a), verdictOf(c)], jury: juryNotes(board, onBoard),
+      }),
     );
+    if (isRepeat(idea, onBoard)) {
+      barren.pairs.add(pairKey(a.id, c.id));
+      throw new AppError(409, 'repeat', 'The model only repeated an idea that is already on the board');
+    }
     const dx = c.x - a.x, dy = c.y - a.y, len = Math.hypot(dx, dy) || 1; // midpoint, nudged off the line
     const created = repo.insertIdea(
       {
@@ -483,16 +542,22 @@ export function createEngine(deps: Deps) {
         await judgeAll(unjudged.map((i) => i.id));
         return { did: 'judge', ids: unjudged.map((i) => i.id) };
       }
-      const move = nextMove(ideas, repo.listEdges(boardId), { busy: judging });
+      const move = nextMove(ideas, repo.listEdges(boardId), { busy: judging, inFlight: barren.pairs, noExpand: barren.expand });
       if (!move) return { did: 'idle', reason: 'nothing_to_do' };
-      if (move.type === 'expand') {
-        const r = await doExpand(move.idea.id);
-        await judgeAll(r.ideas.map((i) => i.id));
-        return { did: 'expand', ids: r.ideas.map((i) => i.id) };
+      try {
+        if (move.type === 'expand') {
+          const r = await doExpand(move.idea.id);
+          await judgeAll(r.ideas.map((i) => i.id));
+          return { did: 'expand', ids: r.ideas.map((i) => i.id) };
+        }
+        const r = await doCombine(boardId, move.a.id, move.b.id);
+        await judgeAll([r.idea.id]);
+        return { did: 'combine', ids: [r.idea.id] };
+      } catch (e: any) {
+        // A repeat is not a failure: that move is now marked barren and the next step picks another.
+        if (e instanceof AppError && e.code === 'repeat') return { did: 'idle', reason: 'repeat' };
+        throw e;
       }
-      const r = await doCombine(boardId, move.a.id, move.b.id);
-      await judgeAll([r.idea.id]);
-      return { did: 'combine', ids: [r.idea.id] };
     },
   };
 }

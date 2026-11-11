@@ -3,6 +3,10 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_APP_SETTINGS, extractJson, keyFor, listModels, makeChat, mergeAppSettings, parseModel, ProviderError, type AppSettings,
 } from '../server/providers.ts';
@@ -201,3 +205,64 @@ test('Groq and Google are providers of their own, each with its own key', async 
   assert.equal(parseModel('groq:openai/gpt-oss-120b').provider, 'groq');
   await assert.rejects(makeChat(() => settingsWith({}))(req('google:gemini-flash-lite')), (e: any) => e.code === 'no_key');
 });
+
+// ---- subscription CLIs (agy, claude) run headless: fake binaries, no network
+
+const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+const cliLog = join(mkdtempSync(join(tmpdir(), 'ideagen-cli-')), 'log.json');
+const lastCli = () => JSON.parse(readFileSync(cliLog, 'utf8'));
+const withCli = async (fn: () => Promise<void>) => {
+  const prev = { ...process.env };
+  Object.assign(process.env, { AGY_BIN: fixture('fake-agy.mjs'), CLAUDE_BIN: fixture('fake-claude.mjs'), FAKE_CLI_LOG: cliLog, ANTHROPIC_API_KEY: 'sk-must-not-leak' });
+  try { await fn(); } finally {
+    for (const k of ['AGY_BIN', 'CLAUDE_BIN', 'FAKE_CLI_LOG', 'ANTHROPIC_API_KEY']) prev[k] === undefined ? delete process.env[k] : (process.env[k] = prev[k]);
+  }
+};
+
+test('agy: one headless turn in an empty folder, JSON asked for in the prompt, no key and no cost', () => withCli(async () => {
+  assert.deepEqual(parseModel('agy:gemini-3.8-flash-high'), { provider: 'agy', model: 'gemini-3.8-flash-high' });
+  const chat = makeChat(() => settingsWith({}));
+  const out = await chat(req('agy:gemini-3.8-flash-high'));
+  assert.deepEqual(out.value, { title: 'Från agy' }, 'the JSON is pulled out of the prose and the code fence');
+  assert.equal(out.costUsd, 0);
+  const { args, cwd } = lastCli();
+  assert.equal(args[0], '-p');
+  assert.match(args[1], /^sys\n\nusr/);
+  assert.match(args[1], /Respond with ONLY a JSON object/);
+  assert.deepEqual(args.slice(2), ['--model', 'gemini-3.8-flash-high', '--mode', 'accept-edits', '--output-format', 'json', '--print-timeout', '180s']);
+  assert.match(cwd, /ideagen-agy-/, 'not the project folder: no AGENTS.md, no files to touch');
+  assert.ok(!existsSync(cwd), 'the temp folder is removed afterwards');
+}));
+
+test('agy: a prompt too long for a command line goes through a file', () => withCli(async () => {
+  const chat = makeChat(() => settingsWith({}));
+  await chat({ ...req('agy:gemini-3.8-flash-high'), user: 'x'.repeat(25_000) });
+  const { args, promptFile } = lastCli();
+  assert.match(args[1], /^Read the file prompt\.md/);
+  assert.equal(promptFile.length > 25_000, true);
+}));
+
+test('agy: an exhausted quota is reported as rate_limited, a missing binary as unreachable', () => withCli(async () => {
+  const chat = makeChat(() => settingsWith({}));
+  await assert.rejects(chat({ ...req('agy:gemini-3.8-flash-high'), user: 'QUOTA' }), (e: any) => e instanceof ProviderError && e.code === 'rate_limited');
+  await assert.rejects(chat(req('agy:bad model; rm -rf')), (e: any) => e.code === 'bad_model');
+  process.env.AGY_BIN = join(tmpdir(), 'no-such-agy-binary');
+  await assert.rejects(chat(req('agy:gemini-3.8-flash-high')), (e: any) => e instanceof ProviderError && e.code === 'unreachable');
+  await assert.rejects(listModels(settingsWith({}), 'agy'), (e: any) => e.code === 'unreachable');
+}));
+
+test('claudecode: prompt on stdin, subscription not API key, tools off', () => withCli(async () => {
+  const chat = makeChat(() => settingsWith({}));
+  const out = await chat(req('claudecode:sonnet'));
+  assert.deepEqual(out.value, { title: 'Från claude' });
+  assert.equal(out.costUsd, 0, "the CLI's notional cost is not charged to the budget");
+  const { args, stdin, hasApiKey, cwd } = lastCli();
+  assert.deepEqual(args, ['-p', '--output-format', 'json', '--model', 'sonnet', '--disallowedTools', 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch']);
+  assert.match(stdin, /^sys\n\nusr/);
+  assert.match(stdin, /"title"/, 'the schema travels in the prompt');
+  assert.equal(hasApiKey, false, 'an API key in the environment would bill the key instead of the subscription');
+  assert.match(cwd, /ideagen-claudecode-/);
+  await assert.rejects(chat({ ...req('claudecode:sonnet'), user: 'LIMIT' }), (e: any) => e.code === 'rate_limited');
+  assert.deepEqual(await listModels(settingsWith({}), 'claudecode'), ['sonnet', 'opus', 'haiku']);
+  await assert.rejects(chat({ ...req('claudecode:sonnet'), plugins: [{ id: 'web' }] }), (e: any) => e.code === 'no_search');
+}));

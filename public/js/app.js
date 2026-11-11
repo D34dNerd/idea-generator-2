@@ -4,7 +4,7 @@ import { api, follow } from './api.js';
 import { $, h, clear, toast, debounce } from './dom.js';
 import { t, getLang, getLocale, setLang, nextLang, langLabel, LANGS, applyI18n, errorText } from './i18n.js';
 import { Graph, KIND_COLORS } from './graph.js';
-import { loadSettings, saveSettings, pushSettings, ROLES, PROVIDER_IDS, providersInUse, DEFAULTS } from './settings.js';
+import { loadSettings, saveSettings, pushSettings, newBoardConfig, ROLES, PROVIDER_IDS, providersInUse, DEFAULTS } from './settings.js';
 import { medal, scoreSum, fitness, CRITERIA } from './score.js';
 import { evolutionStats } from './evolve.js';
 import { openDashboard } from './dashboard.js';
@@ -629,7 +629,7 @@ async function newBoardDialog(first = false) {
       onclick: async (e) => {
         e.preventDefault();
         try {
-          const { board } = await api('POST', '/api/boards', { title: title.value, goal: goal.value, templateId: Number(tpl.value), lang: getLang() });
+          const { board } = await api('POST', '/api/boards', { title: title.value, goal: goal.value, templateId: Number(tpl.value), lang: getLang(), config: newBoardConfig(S.settings) });
           dlg.close();
           await loadBoards();
           await openBoard(board.id);
@@ -694,6 +694,23 @@ async function boardSettingsDialog() {
     h('fieldset', {}, h('legend', {}, t('models')), h('small', { class: 'muted' }, t('modelsBoardNote')),
       h('div', { class: 'grid2' }, ROLES.map((r) => field(t(`role_${r}`), models[r])))),
     h('button', {
+      class: 'btn small', type: 'button', title: t('saveAsDefaultNote'),
+      onclick: async () => {
+        // This board's jury, autopilot pace and models become what every new board starts with.
+        const s = structuredClone(S.settings);
+        s.boardDefaults = {
+          judgeGuidance: guidance.value.trim(), autopilotSeconds: Number(pace.value),
+          rate: { stepsPerHour: Number(sph.value), usdPerDay: Number(usd.value) },
+        };
+        for (const r of ROLES) if (models[r].value.trim()) s.models[r] = models[r].value.trim();
+        try {
+          S.settings = s;
+          S.providers = await saveSettings(s);
+          toast(t('defaultSaved'), 'good', 6000);
+        } catch (e) { fail(e); }
+      },
+    }, t('saveAsDefault')),
+    h('button', {
       class: 'btn danger small', type: 'button',
       onclick: async () => {
         if (!confirm(t('confirmDeleteBoard', { t: b.title }))) return;
@@ -731,6 +748,7 @@ async function boardSettingsDialog() {
 const PROVIDER_LABELS = {
   openrouter: 'OpenRouter', anthropic: 'Anthropic', openai: 'OpenAI',
   groq: 'Groq', google: 'Google Gemini (AI Studio)', azure: 'Azure OpenAI / Microsoft Foundry (Copilot models)', ollama: 'Ollama', mlx: 'MLX (mlx_lm.server)', lmstudio: 'LM Studio', custom: 'OpenAI-compatible',
+  agy: 'Antigravity CLI (agy)', claudecode: 'Claude Code (claude)',
 };
 const HAS_URL = ['ollama', 'mlx', 'lmstudio', 'azure', 'custom'];
 const HAS_KEY = ['openrouter', 'anthropic', 'openai', 'groq', 'google', 'azure', 'custom'];
@@ -779,6 +797,7 @@ function appSettingsDialog() {
   const vaultMin = h('select', {}, [[0, t('vaultAutoOff')], [2, t('vaultAutoSilver')], [3, t('vaultAutoGold')]]
     .map(([v, label]) => h('option', { value: v, selected: s.vaultMinMedal === v }, label)));
   const budget = h('input', { type: 'number', min: 0, step: 0.5, value: s.maxUsdPerDay });
+  const defGuidance = h('textarea', { rows: 4, placeholder: t('judgeGuidancePh') }, s.boardDefaults.judgeGuidance);
   const spend = S.providers ? t('spend', { today: S.providers.spentToday.toFixed(3), total: S.providers.spentTotal.usd.toFixed(3) }) : '';
 
   async function saveFromForm(close = true) {
@@ -791,6 +810,7 @@ function appSettingsDialog() {
     s.vaultRoot = vault.value.trim();
     s.vaultMinMedal = Number(vaultMin.value);
     s.maxUsdPerDay = Number(budget.value);
+    s.boardDefaults = { ...s.boardDefaults, judgeGuidance: defGuidance.value.trim() };
     S.settings = s;
     S.providers = await saveSettings(s);
     if (close) { dlg.close(); toast(t('settingsSaved')); warnMissingKeys(); }
@@ -801,6 +821,7 @@ function appSettingsDialog() {
     h('fieldset', {}, h('legend', {}, t('providers')), rows),
     h('fieldset', {}, h('legend', {}, t('models')), h('div', { class: 'grid2' }, ROLES.map((r) => field(t(`role_${r}`), models[r]))),
       h('small', { class: 'muted' }, t('calibrateNote'))),
+    h('fieldset', {}, h('legend', {}, t('newBoards')), field(t('judgeGuidance'), defGuidance, t('newBoardsNote'))),
     h('fieldset', {}, h('legend', {}, 'Claude Code'), field(t('projectsRoot'), root)),
     h('fieldset', {}, h('legend', {}, 'Obsidian'), field(t('vaultRoot'), vault), field(t('vaultAuto'), vaultMin)),
     h('fieldset', {}, h('legend', {}, t('autopilot')), field(t('globalBudget'), budget, spend)),

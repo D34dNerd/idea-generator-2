@@ -437,3 +437,69 @@ test('report: totals, every project, per-board insights, saved conclusions, Mark
   assert.match(md, /## Slutsatser/);
   assert.match(md, /cd ".*sjungande-bank" && claude/);
 });
+
+// ---- what the generator learns from the jury
+
+test('a long goal is kept whole', async () => {
+  const goal = `${'Contexto: hardware local com 16 GB de VRAM. '.repeat(20)}Objetivo: serviços B2B que uma pessoa vende sozinha.`;
+  assert.ok(goal.length > 600);
+  const board = await newBoard({ goal });
+  assert.equal(board.goal, goal, 'no silent cut at 600 characters');
+  const { data } = await api('PATCH', `/api/boards/${board.id}`, { goal: 'x'.repeat(5000) });
+  assert.equal(data.board.goal.length, 4000);
+});
+
+test('expand and combine are told what the jury said, and the jury sees similar ideas', async () => {
+  judgeScores = { originality: 2, feasibility: 2, impact: 2 };
+  const board = await newBoard({ goal: 'Menos carros na cidade', lang: 'pt' });
+  await api('PATCH', `/api/boards/${board.id}`, { config: { judgeGuidance: 'Seja um júri brutal.' } });
+  const s = await seed(board.id, 'Bicicletas compartilhadas');
+  await engine.idle();
+
+  const { data: e } = await api('POST', `/api/ideas/${s.id}/expand`, {});
+  const expand = lastCall('expand').user;
+  assert.match(expand, /The jury's verdict on the concept: originality 2\/5, feasibility 2\/5, impact 2\/5 \(6\/15\)\. Stark mekanism, oklar kund\./);
+  assert.match(expand, /One of your three ideas must be the concept repaired/);
+  assert.match(expand, /The board's own instructions to the jury:\nSeja um júri brutal\./);
+  assert.match(expand, /What the jury recently rejected on this board[^\n]*\n- Stark mekanism, oklar kund\./);
+  assert.match(expand, /First write six candidates/);
+  assert.deepEqual((lastCall('expand').schema as any).required, ['candidates', 'ideas']);
+  await engine.idle();
+
+  await api('POST', `/api/boards/${board.id}/combine`, { a: e.ideas[0].id, b: e.ideas[1].id });
+  const combine = lastCall('combine').user;
+  assert.match(combine, /Idea 1:\nBarn [^\n]*\nJury: originality 2\/5/);
+  assert.match(combine, /must not inherit its parents' flaws/);
+  await engine.idle();
+  const judged = lastCall('judgement').user;
+  assert.match(judged, /Similar ideas already on the board:\n- /, 'originality is judged against the board');
+  judgeScores = { originality: 3, feasibility: 3, impact: 3 };
+});
+
+test('a repeat is dropped before it is judged', async () => {
+  const board = await newBoard({ goal: 'Ljud' });
+  const s = await seed(board.id, 'Korsning');
+  await engine.idle();
+  const s2 = await seed(board.id, 'Annat frö');
+  await engine.idle();
+  const before = repo.listIdeas(board.id).length;
+  // The fake model titles every combination "Korsning": the same title as an idea on the board.
+  const r = await api('POST', `/api/boards/${board.id}/combine`, { a: s.id, b: s2.id });
+  assert.equal(r.status, 409);
+  assert.equal(r.data.code ?? r.data.error?.code, 'repeat');
+  assert.equal(repo.listIdeas(board.id).length, before, 'nothing was added');
+});
+
+test('a new board starts with the defaults the browser sends, sanitised', async () => {
+  const { data } = await api('POST', '/api/boards', {
+    lang: 'pt', config: { judgeGuidance: 'Seja um júri brutal.', autopilotSeconds: 60, rate: { stepsPerHour: 30, usdPerDay: 0 }, lang: 'sv', bogus: 1 },
+  });
+  const c = data.board.config;
+  assert.equal(c.judgeGuidance, 'Seja um júri brutal.');
+  assert.equal(c.autopilotSeconds, 60);
+  assert.deepEqual(c.rate, { stepsPerHour: 30, usdPerDay: 0 });
+  assert.equal(c.lang, 'pt', 'the language of the request wins');
+  assert.equal(c.bogus, undefined);
+  assert.deepEqual(c.models, {}, 'models stay with the app settings unless a board overrides them');
+  assert.equal((await newBoard()).config.judgeGuidance, '', 'nothing sent, nothing set');
+});
