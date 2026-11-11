@@ -83,9 +83,12 @@ test('scheduler: only auto boards run, at their pace, within their limits', asyn
   assert.equal(ap.status(auto.id).code, 'no_key');
   now += 15_000; await ap.tick(); await flush();
   assert.equal(ap.status(auto.id).state, 'backoff');
+  assert.equal(ap.status(auto.id).code, 'no_key', 'the reason stays on screen while backing off');
+  assert.ok(ap.status(auto.id).message);
   setFail(false);
   now += 30_000; await ap.tick(); await flush();
   assert.equal(steps.length, 4, 'recovers after the backoff');
+  assert.equal(ap.status(auto.id).message, undefined, 'and the old error is gone');
 
   // Budget: the board has spent 4 × $0.30; a $1 cap stops it until midnight.
   repo.updateBoard(auto.id, { config: { rate: { stepsPerHour: 3, usdPerDay: 1 } } });
