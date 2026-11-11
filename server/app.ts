@@ -33,6 +33,8 @@ const TYPES: Record<string, string> = {
 };
 
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+// A goal is often a pasted brief. At 600 characters one was cut mid-sentence, before it reached its point.
+const GOAL_MAX = 4000;
 const daysOf = (url: URL) => Math.min(365, Math.max(1, Number(url.searchParams.get('days')) || 30));
 
 async function readJson(req: IncomingMessage): Promise<any> {
@@ -216,7 +218,7 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
       return {
         board: repo.createBoard({
           title: str(b.title, 120) || ({ sv: 'Ny tavla', en: 'New board', pt: 'Novo quadro' } as const)[lang],
-          goal: str(b.goal, 600),
+          goal: str(b.goal, GOAL_MAX),
           templateId: Number.isInteger(b.templateId) ? b.templateId : null,
           config: { lang },
         }),
@@ -239,7 +241,7 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
     ['PATCH', /^\/api\/boards\/(\d+)$/, ([id], b) => {
       const patch: any = {};
       if (typeof b.title === 'string' && b.title.trim()) patch.title = str(b.title, 120);
-      if (typeof b.goal === 'string') patch.goal = str(b.goal, 600);
+      if (typeof b.goal === 'string') patch.goal = str(b.goal, GOAL_MAX);
       if (b.config && typeof b.config === 'object') patch.config = b.config;
       return engine.updateBoard(+id, patch);
     }],

@@ -36,16 +36,33 @@ const PITCH_PROPS = {
   title: { type: 'string', description: 'A concrete name for the idea, 2–6 words. No quotes, no trailing period.' },
   pitch: {
     type: 'string',
-    description: 'One or two sentences, at most 40 words: what it is, for whom, and the mechanism that makes it work.',
+    description:
+      'Two to four sentences, at most 70 words: who has the problem, what exactly happens (the mechanism that makes it work), and the first small test of it. Plain words; no slogans, no "platform that uses AI to".',
   },
 };
 const PITCH_SCHEMA = { type: 'object', properties: PITCH_PROPS, required: ['title', 'pitch'], additionalProperties: false };
+// Candidates come first so the model drafts wide before it commits: six one-liners, then the best three.
 const EXPAND_SCHEMA = {
   type: 'object',
   properties: {
-    ideas: { type: 'array', description: 'Exactly 3 ideas.', items: PITCH_SCHEMA },
+    candidates: {
+      type: 'array',
+      description: 'Six candidate ideas, one line each, clearly different from each other. Written before you choose.',
+      items: { type: 'string' },
+    },
+    ideas: { type: 'array', description: 'Exactly 3 ideas: the candidates this jury would score highest, developed.', items: PITCH_SCHEMA },
   },
-  required: ['ideas'],
+  required: ['candidates', 'ideas'],
+  additionalProperties: false,
+};
+// The link comes first for the same reason: name the connection, then write the idea around it.
+const COMBINE_SCHEMA = {
+  type: 'object',
+  properties: {
+    link: { type: 'string', description: 'One sentence: the specific mechanism that connects the two ideas, and which jury objection to each parent it removes.' },
+    ...PITCH_PROPS,
+  },
+  required: ['link', 'title', 'pitch'],
   additionalProperties: false,
 };
 // The reason comes first so the model argues before it scores.
@@ -54,7 +71,8 @@ const JUDGE_SCHEMA = {
   properties: {
     reason: {
       type: 'string',
-      description: 'One sentence, at most 25 words, in the language of the idea: the main strength and the main weakness.',
+      description:
+        'Two sentences, at most 45 words, in the language of the idea. First the main flaw, stated plainly. Then the one concrete change that would raise the score most. The next version of the idea is written from this.',
     },
     originality: { type: 'integer', description: 'Integer 1–5.' },
     feasibility: { type: 'integer', description: 'Integer 1–5.' },
@@ -97,6 +115,37 @@ function context(board: BoardCtx, existingTitles: string[]) {
 
 const fmtIdea = (i: Pitch) => (i.pitch ? `${i.title}: ${i.pitch}` : i.title);
 
+/** What the jury said about an idea, for the model that will build on it. */
+export type Verdict = { originality: number; feasibility: number; impact: number; reason: string };
+/** What a generator is told about the jury: the board's own instructions, recent rejections, worn-out words. */
+export type JuryNotes = { guidance?: string; rejections?: string[]; stuck?: string[] };
+
+const fmtVerdict = (v: Verdict) =>
+  `originality ${v.originality}/5, feasibility ${v.feasibility}/5, impact ${v.impact}/5 (${v.originality + v.feasibility + v.impact}/15). ${v.reason}`.trim();
+
+/**
+ * The generator used to write blind: it never saw the scale, the board's jury
+ * instructions or a single verdict, so ten generations repeated the flaw the
+ * jury named every time. This is what it is told now.
+ */
+function juryBrief(n: JuryNotes = {}) {
+  const parts = [
+    'How ideas are judged here: a strict jury scores originality, feasibility and impact, 1–5 each. ' +
+      'It gives 1–2 to bare topics, to anything vague about what actually happens, and to an idea that rewords one already on the board. ' +
+      'It rewards a specific, non-obvious mechanism that could be piloted within months and that matters for the goal.',
+  ];
+  const guidance = (n.guidance ?? '').trim();
+  if (guidance) parts.push(`The board's own instructions to the jury:\n${guidance}`);
+  if (n.rejections?.length)
+    parts.push(`What the jury recently rejected on this board (an idea open to the same objection will be rejected too):\n${n.rejections.map((r) => `- ${r}`).join('\n')}`);
+  if (n.stuck?.length)
+    parts.push(
+      `The board is stuck: these words run through a large share of its ideas: ${n.stuck.join(', ')}. ` +
+        'More of the same will not score. Unless an idea cannot exist without them, build ideas that are about something else.',
+    );
+  return parts.join('\n\n');
+}
+
 export const JUDGE_SYSTEM = `You are a strict, experienced innovation jury. You score ideas on three criteria, each an integer 1–5.
 
 ORIGINALITY
@@ -119,6 +168,7 @@ Rules:
 - Vague ideas that do not say what actually happens score at most 2 on feasibility and impact.
 - Most ideas land around 2–3 per criterion. Reserve 5 for the exceptional; fewer than one idea in ten should reach a total of 13.
 - Judge the idea as written, not the best idea it could become.
+- If similar ideas already on the board are listed, judge originality against them: an idea that rewords one of them, with no new mechanism, scores originality 1.
 - If the board has a goal, judge against it: impact means impact on that goal, and an idea that does not serve the goal scores at most 2 on impact however good it is otherwise. Say in the reason how well it fits the goal.`;
 
 const list = (description: string) => ({ type: 'array', description, items: { type: 'string' } });
@@ -188,8 +238,8 @@ const SYNTHESIS_SCHEMA = {
 };
 
 export function makeLLM(chat: ChatFn) {
-  const gen = async (model: string, system: string, user: string, schemaName: string, schema: object) => {
-    return chat({ model, system, user, schemaName, schema, temperature: 0.9 });
+  const gen = async (model: string, system: string, user: string, schemaName: string, schema: object, maxTokens?: number) => {
+    return chat({ model, system, user, schemaName, schema, temperature: 0.9, maxTokens });
   };
 
   const tidy = (p: any): Pitch => ({
@@ -198,32 +248,51 @@ export function makeLLM(chat: ChatFn) {
   });
 
   return {
-    async expand(a: { model: string; flow: Flow; board: BoardCtx; idea: Pitch; existingTitles: string[]; lang: Lang }) {
+    /** verdict: the jury's judgement of the concept, when it has one. One of the three ideas then repairs it. */
+    async expand(a: {
+      model: string; flow: Flow; board: BoardCtx; idea: Pitch; existingTitles: string[]; lang: Lang;
+      verdict?: Verdict | null; jury?: JuryNotes;
+    }) {
       const user = [
         a.flow.expand,
         `The concept:\n${fmtIdea(a.idea)}`,
+        a.verdict
+          ? `The jury's verdict on the concept: ${fmtVerdict(a.verdict)}\n` +
+            'One of your three ideas must be the concept repaired: keep what the jury credited and remove the main flaw it names, by changing what actually happens, not the wording. The other two must go somewhere the concept does not.'
+          : '',
         context(a.board, a.existingTitles),
+        juryBrief(a.jury),
+        'Work in two steps. First write six candidates, one line each, as different from each other as you can make them. Then drop every candidate that the objections above would sink, and develop the three that this jury would score highest.',
         languageRule(a.lang),
       ]
         .filter(Boolean)
         .join('\n\n');
-      const { value, costUsd } = await gen(a.model, a.flow.system, user, 'expand', EXPAND_SCHEMA);
+      const { value, costUsd } = await gen(a.model, a.flow.system, user, 'expand', EXPAND_SCHEMA, 2000);
       const ideas = (Array.isArray(value?.ideas) ? value.ideas : []).map(tidy).filter((i: Pitch) => i.title);
       if (!ideas.length) throw new Error('The model returned no ideas');
       return { ideas: ideas.slice(0, 3), costUsd };
     },
 
-    async combine(a: { model: string; flow: Flow; board: BoardCtx; a: Pitch; b: Pitch; existingTitles: string[]; lang: Lang }) {
+    async combine(a: {
+      model: string; flow: Flow; board: BoardCtx; a: Pitch; b: Pitch; existingTitles: string[]; lang: Lang;
+      verdicts?: [Verdict | null, Verdict | null]; jury?: JuryNotes;
+    }) {
+      const withVerdict = (n: number, i: Pitch, v?: Verdict | null) => `Idea ${n}:\n${fmtIdea(i)}${v ? `\nJury: ${fmtVerdict(v)}` : ''}`;
+      const judged = !!(a.verdicts?.[0] || a.verdicts?.[1]);
       const user = [
         a.flow.combine,
-        `Idea 1:\n${fmtIdea(a.a)}`,
-        `Idea 2:\n${fmtIdea(a.b)}`,
+        withVerdict(1, a.a, a.verdicts?.[0]),
+        withVerdict(2, a.b, a.verdicts?.[1]),
+        judged
+          ? "The new concept must not inherit its parents' flaws: take from each what the jury credited, and let the connection between them remove the main objection to each. Do not staple the two together."
+          : '',
         context(a.board, a.existingTitles),
+        juryBrief(a.jury),
         languageRule(a.lang),
       ]
         .filter(Boolean)
         .join('\n\n');
-      const { value, costUsd } = await gen(a.model, a.flow.system, user, 'combine', PITCH_SCHEMA);
+      const { value, costUsd } = await gen(a.model, a.flow.system, user, 'combine', COMBINE_SCHEMA);
       const idea = tidy(value);
       if (!idea.title) throw new Error('The model returned no idea');
       return { idea, costUsd };
@@ -332,12 +401,14 @@ export function makeLLM(chat: ChatFn) {
     },
 
     /** guidance: the board's own jury instructions, on top of the fixed scale. */
-    async judge(a: { model: string; board: BoardCtx; idea: Pitch; lang: Lang; guidance?: string; vocabulary?: string[] }) {
+    /** similar: the ideas on the board that read most like this one, so originality is not judged in a vacuum. */
+    async judge(a: { model: string; board: BoardCtx; idea: Pitch; lang: Lang; guidance?: string; vocabulary?: string[]; similar?: Pitch[] }) {
       const guidance = (a.guidance ?? '').trim();
       const system = guidance ? `${JUDGE_SYSTEM}\n\nAdditional guidance from this board's facilitator:\n${guidance}` : JUDGE_SYSTEM;
       const user = [
         a.board.goal.trim() ? `The board's goal (the general direction): ${a.board.goal.trim()}` : '',
         `The idea:\n${fmtIdea(a.idea)}`,
+        a.similar?.length ? `Similar ideas already on the board:\n${a.similar.map((i) => `- ${fmtIdea(i)}`).join('\n')}` : '',
         `Write the reason in the language of the idea; if unclear, in ${LANG_NAME[a.lang]}.`,
         a.vocabulary?.length ? `Keyword vocabulary in use (reuse when one fits): ${a.vocabulary.join(', ')}` : '',
       ]
@@ -350,13 +421,13 @@ export function makeLLM(chat: ChatFn) {
         schemaName: 'judgement',
         schema: JUDGE_SCHEMA,
         temperature: 0.2,
-        maxTokens: 400,
+        maxTokens: 500,
       });
       const judgement: Judgement = {
         originality: clampScore(value?.originality),
         feasibility: clampScore(value?.feasibility),
         impact: clampScore(value?.impact),
-        reason: String(value?.reason ?? '').trim().slice(0, 400),
+        reason: String(value?.reason ?? '').trim().slice(0, 500),
         keywords: normalizeKeywords(value?.keywords),
       };
       return { judgement, costUsd };

@@ -8,8 +8,9 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { isAbsolute } from 'node:path';
+import { CliError, cliModels, cliText, type CliId } from './cli.ts';
 
-export type ProviderId = 'openrouter' | 'anthropic' | 'openai' | 'groq' | 'google' | 'azure' | 'ollama' | 'mlx' | 'lmstudio' | 'custom';
+export type ProviderId = 'openrouter' | 'anthropic' | 'openai' | 'groq' | 'google' | 'azure' | 'ollama' | 'mlx' | 'lmstudio' | 'custom' | 'agy' | 'claudecode';
 export type Role = 'distill' | 'expand' | 'combine' | 'judge' | 'summary' | 'research' | 'x' | 'brief';
 export const ROLES: Role[] = ['distill', 'expand', 'combine', 'judge', 'summary', 'research', 'x', 'brief'];
 
@@ -46,7 +47,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 
 type ProviderDef = {
   label: string;
-  type: 'openai' | 'anthropic' | 'ollama';
+  type: 'openai' | 'anthropic' | 'ollama' | 'cli';
   base?: string;
   env?: string;
   needsKey: boolean;
@@ -73,6 +74,14 @@ export const PROVIDERS: Record<ProviderId, ProviderDef> = {
   mlx: { label: 'MLX · mlx_lm.server (local)', type: 'openai', needsKey: false, local: true },
   lmstudio: { label: 'LM Studio (local)', type: 'openai', needsKey: false, local: true },
   custom: { label: 'Other OpenAI-compatible', type: 'openai', env: 'CUSTOM_API_KEY', needsKey: false },
+  agy: {
+    label: 'Antigravity CLI (Google subscription, local)', type: 'cli', needsKey: false, local: true,
+    note: 'Runs "agy -p" headless on this machine with the account the CLI is signed in to. No API key. Model = a name agy accepts, e.g. agy:gemini-3.8-flash-high. Slow (about half a minute per call) and bound by the subscription\'s limits.',
+  },
+  claudecode: {
+    label: 'Claude Code (Claude subscription, local)', type: 'cli', needsKey: false, local: true,
+    note: 'Runs "claude -p" headless on this machine with the account Claude Code is signed in to. No API key. Model = sonnet, opus or haiku, e.g. claudecode:sonnet. Bound by the subscription\'s limits.',
+  },
 };
 
 export function parseModel(ref: string): { provider: ProviderId; model: string } {
@@ -317,6 +326,29 @@ async function anthropicChat(settings: AppSettings, model: string, r: ChatReques
   throw new ProviderError('provider_error', `Anthropic ${model} failed`);
 }
 
+/** A subscription CLI as a provider: the schema goes into the prompt, the answer comes back as text. */
+async function cliChat(id: CliId, model: string, r: ChatRequest): Promise<ChatResult> {
+  if (r.plugins) throw new ProviderError('no_search', 'The X scout needs OpenRouter (Grok with X search)');
+  const prompt = `${r.system}\n\n${r.user}\n\nAnswer directly from what is written above. Do not use tools, do not read or write files.${promptJsonRule(r.schema)}`;
+  let lastError = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let text: string;
+    try {
+      text = await cliText(id, model, prompt);
+    } catch (e: any) {
+      if (e instanceof CliError) throw new ProviderError(e.code, e.message);
+      throw e;
+    }
+    try {
+      // Subscription calls cost nothing per call, so the dollar limits do not count them.
+      return { value: extractJson(text), costUsd: 0 };
+    } catch (e: any) {
+      lastError = e.message;
+    }
+  }
+  throw new ProviderError('provider_error', `${PROVIDERS[id].label}: ${lastError}`);
+}
+
 /** A chat function that routes every request by its "provider:model" string. */
 export function makeChat(getSettings: () => AppSettings): ChatFn {
   return async (r) => {
@@ -326,6 +358,7 @@ export function makeChat(getSettings: () => AppSettings): ChatFn {
     const def = PROVIDERS[provider];
     if (def.type === 'anthropic') return anthropicChat(settings, model, r);
     if (def.type === 'ollama') return ollamaChat(settings, model, r);
+    if (def.type === 'cli') return cliChat(provider as CliId, model, r);
     return openaiChat(settings, provider, model, r);
   };
 }
@@ -345,6 +378,13 @@ export async function listModels(settings: AppSettings, p: ProviderId): Promise<
     }
   };
   try {
+    if (PROVIDERS[p].type === 'cli') {
+      try {
+        return await cliModels(p as CliId);
+      } catch (e: any) {
+        throw e instanceof CliError ? new ProviderError(e.code, e.message) : e;
+      }
+    }
     if (p === 'anthropic') {
       const out: string[] = [];
       for await (const m of anthropicClient(key).models.list()) out.push(m.id);

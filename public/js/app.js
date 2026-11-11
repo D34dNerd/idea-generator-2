@@ -731,6 +731,7 @@ async function boardSettingsDialog() {
 const PROVIDER_LABELS = {
   openrouter: 'OpenRouter', anthropic: 'Anthropic', openai: 'OpenAI',
   groq: 'Groq', google: 'Google Gemini (AI Studio)', azure: 'Azure OpenAI / Microsoft Foundry (Copilot models)', ollama: 'Ollama', mlx: 'MLX (mlx_lm.server)', lmstudio: 'LM Studio', custom: 'OpenAI-compatible',
+  agy: 'Antigravity CLI (agy)', claudecode: 'Claude Code (claude)',
 };
 const HAS_URL = ['ollama', 'mlx', 'lmstudio', 'azure', 'custom'];
 const HAS_KEY = ['openrouter', 'anthropic', 'openai', 'groq', 'google', 'azure', 'custom'];

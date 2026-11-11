@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clampScore, fitness, medal, medalFromSum, scoreSum } from '../public/js/score.js';
-import { evolutionStats, expandedIds, nextMove, pairKey, usedPairs } from '../public/js/evolve.js';
+import { breeders, evolutionStats, expandedIds, kinPairs, nextMove, overused, pairKey, similarity, usedPairs, wordSet } from '../public/js/evolve.js';
 
 const idea = (id: number, sum: number | null, extra: any = {}) => {
   const base: any = { id, kind: 'expand', generation: 1, medalOverride: null, ...extra };
@@ -110,4 +110,66 @@ test('evolution stats leave seeds out and compare first and latest windows', () 
   assert.equal(s.best, 12);
   assert.equal(s.generation, 5);
   assert.equal(evolutionStats(ideas.slice(0, 5)).latest, null, 'no "latest" until there is more than one window');
+});
+
+// ---- repetition, kin and the cut
+
+const text = (id: number, title: string, pitch = '') => ({ id, title, pitch });
+
+test('similarity: shared words over all words, accents and case ignored', () => {
+  const a = text(1, 'Estúdio de criativos locais', 'Agências pagam assinatura mensal por criativos gerados em hardware local');
+  assert.equal(similarity(a, a), 1);
+  assert.equal(similarity(a, text(2, 'ESTUDIO DE CRIATIVOS LOCAIS', 'agencias pagam assinatura mensal por criativos gerados em hardware local')), 1);
+  assert.equal(similarity(a, text(3, 'Horta comunitária', 'Vizinhos dividem canteiros no terreno baldio')), 0);
+  assert.equal(similarity(text(4, ''), a), 0);
+  assert.ok(wordSet(text(5, 'Motor V8 em 3D')).has('v8'), 'short names with a digit count');
+  assert.ok(!wordSet(text(5, 'um app de IA')).has('app'), 'short glue words do not');
+});
+
+test('overused: the words a board is stuck on, without the goal\'s own words', () => {
+  const ideas = Array.from({ length: 10 }, (_, n) =>
+    text(n + 1, `Navegador ${n}`, n < 9 ? `Guia de montagem do motor V8 para agentes, variante ${'abcdefghij'[n]}${n}xyz` : 'Outra coisa inteiramente'));
+  const stuck = overused(ideas, 'Negócios com agentes');
+  assert.equal(stuck[0], 'navegador', 'most common first');
+  for (const w of ['guia', 'montagem', 'motor', 'v8']) assert.ok(stuck.includes(w), w);
+  assert.ok(!stuck.some((w: string) => /xyz$/.test(w)), 'a word in one idea is not a rut');
+  assert.ok(!stuck.includes('agentes'), 'a goal word is meant to be everywhere');
+  assert.ok(!stuck.includes('para'), 'glue words say nothing');
+  assert.deepEqual(overused(ideas.slice(0, 5)), [], 'too few ideas to call it stuck');
+});
+
+test('kin are not crossed while unrelated pairs exist', () => {
+  // 1 → 2, 3 (siblings); 2 → 4 (so 1 is grandparent of 4); 5 is unrelated.
+  const edges = [{ from: 1, to: 2 }, { from: 1, to: 3 }, { from: 2, to: 4 }];
+  const kin = kinPairs(edges);
+  assert.ok(kin.has(pairKey(2, 3)), 'siblings');
+  assert.ok(kin.has(pairKey(1, 4)), 'grandparent and grandchild');
+  assert.ok(!kin.has(pairKey(3, 4)));
+  const ideas = [idea(1, 9, { kind: 'seed' }), idea(2, 9), idea(3, 9), idea(4, 9), idea(5, 9, { kind: 'seed' })];
+  for (let s = 0; s < 300; s++) {
+    const m = nextMove(ideas, edges, { rng: rngFrom(s), mutationRate: 0 });
+    assert.equal(m?.type, 'combine');
+    assert.ok(!kin.has(pairKey(m.a.id, m.b.id)), `crossed kin ${m.a.id}-${m.b.id}`);
+  }
+  // Only kin left: better a kin pair than a stalled board.
+  const m = nextMove([idea(2, 9), idea(3, 9)], [{ from: 1, to: 2 }, { from: 1, to: 3 }], { rng: rngFrom(1), mutationRate: 0, noExpand: new Set([2, 3]) });
+  assert.equal(m?.type, 'combine');
+});
+
+test('the weaker part of a large board stops breeding', () => {
+  const ideas = Array.from({ length: 20 }, (_, n) => idea(n + 1, 3 + (n % 10))); // sums 3..12, twice
+  const kept = breeders(ideas);
+  assert.equal(kept.length, 12);
+  assert.ok(kept.every((i: any) => scoreSum(i)! >= 7));
+  assert.equal(breeders(ideas.slice(0, 8)).length, 8, 'a small board keeps everyone');
+  for (let s = 0; s < 200; s++) {
+    const m = nextMove(ideas, [], { rng: rngFrom(s), mutationRate: 0 });
+    assert.ok(scoreSum(m.a)! >= 7 && scoreSum(m.b)! >= 7);
+  }
+});
+
+test('an idea whose expansion only gave repeats is not expanded again', () => {
+  const ideas = [idea(1, 12, { kind: 'seed' }), idea(2, 8, { kind: 'seed' })];
+  assert.equal(nextMove(ideas, [], { rng: rngFrom(1) }).idea.id, 1);
+  assert.equal(nextMove(ideas, [], { rng: rngFrom(1), noExpand: new Set([1]) }).idea.id, 2);
 });

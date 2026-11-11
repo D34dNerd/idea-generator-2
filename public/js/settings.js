@@ -6,7 +6,7 @@ import { api } from './api.js';
 
 const KEY = 'ideagen.settings.v1';
 export const ROLES = ['distill', 'expand', 'combine', 'judge', 'summary', 'research', 'x', 'brief'];
-export const PROVIDER_IDS = ['openrouter', 'anthropic', 'openai', 'groq', 'google', 'azure', 'ollama', 'mlx', 'lmstudio', 'custom'];
+export const PROVIDER_IDS = ['openrouter', 'anthropic', 'openai', 'groq', 'google', 'azure', 'ollama', 'mlx', 'lmstudio', 'custom', 'agy', 'claudecode'];
 
 const SONNET = 'openrouter:anthropic/claude-sonnet-5.5';
 export const DEFAULTS = {
