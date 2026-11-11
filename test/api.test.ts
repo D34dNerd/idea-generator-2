@@ -489,3 +489,17 @@ test('a repeat is dropped before it is judged', async () => {
   assert.equal(r.data.code ?? r.data.error?.code, 'repeat');
   assert.equal(repo.listIdeas(board.id).length, before, 'nothing was added');
 });
+
+test('a new board starts with the defaults the browser sends, sanitised', async () => {
+  const { data } = await api('POST', '/api/boards', {
+    lang: 'pt', config: { judgeGuidance: 'Seja um júri brutal.', autopilotSeconds: 60, rate: { stepsPerHour: 30, usdPerDay: 0 }, lang: 'sv', bogus: 1 },
+  });
+  const c = data.board.config;
+  assert.equal(c.judgeGuidance, 'Seja um júri brutal.');
+  assert.equal(c.autopilotSeconds, 60);
+  assert.deepEqual(c.rate, { stepsPerHour: 30, usdPerDay: 0 });
+  assert.equal(c.lang, 'pt', 'the language of the request wins');
+  assert.equal(c.bogus, undefined);
+  assert.deepEqual(c.models, {}, 'models stay with the app settings unless a board overrides them');
+  assert.equal((await newBoard()).config.judgeGuidance, '', 'nothing sent, nothing set');
+});

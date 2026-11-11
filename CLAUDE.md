@@ -5,7 +5,7 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 ## Commands
 
 - `npm start` – server on http://localhost:8300 (`PORT`, `HOST`, `DB_FILE` override)
-- `npm test` – 71 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
+- `npm test` – 72 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
 - `npm run calibrate [-- --model provider:model]` – real judge against weak and strong reference ideas. It costs money. **Re-run it whenever the judge's prompt, schema or model changes.**
 
 ## Layout
@@ -42,6 +42,7 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 - **Repeats are dropped before they are judged:** same title, or word overlap of 0.5 and up (`DUPLICATE_AT`). Models paraphrase, so overlap only catches near-copies; `overused` and the jury's "similar ideas" handle the rest.
 - **The goal holds 4,000 characters.** At 600 a pasted brief was cut before its actual objective.
 - **App settings live in the browser's localStorage.** The server holds them in memory, and the SSE `hello` tells the browser to push them again after a restart. Board configuration lives in the DB.
+- **New boards start from `boardDefaults`** in the app settings (jury guidance, autopilot pace and limits), sent by the browser with `POST /api/boards`. "Use as default for new boards" in a board's settings fills it from that board and copies its model overrides to the app-wide models.
 - **Dollar limits only see providers that report cost** (OpenRouter `usage.cost`, Anthropic via the price table). A limit of 0 means free models only.
 - **Text goes into the DOM as text nodes, never `innerHTML`** (`dom.js`). Ideas are written by models and by visitors.
 - **Vault notes only overwrite their own note:** a note is matched by `idea_id` in its properties; a hand-written note with the same name makes the idea's note `Name (2).md`.

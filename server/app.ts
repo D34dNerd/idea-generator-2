@@ -220,7 +220,8 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
           title: str(b.title, 120) || ({ sv: 'Ny tavla', en: 'New board', pt: 'Novo quadro' } as const)[lang],
           goal: str(b.goal, GOAL_MAX),
           templateId: Number.isInteger(b.templateId) ? b.templateId : null,
-          config: { lang },
+          // The browser's defaults for new boards (jury guidance, autopilot pace); mergeConfig keeps only well-typed values.
+          config: { ...(b.config && typeof b.config === 'object' ? b.config : {}), lang },
         }),
       };
     }],
