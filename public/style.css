@@ -44,6 +44,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn.primary:hover { background: #4a95ee; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-2); }
 .btn.ghost:hover { background: var(--surface-2); color: var(--text); }
+.btn.ghost.on { background: var(--surface-2); color: var(--text); }
 .btn.small { padding: 3px 9px; font-size: 12px; }
 .btn.danger { color: var(--danger); border-color: #4a2a2e; background: transparent; }
 .btn.cc { width: 100%; border-color: #4a4637; background: #24221b; color: #f1e7c8; font-weight: 600; }

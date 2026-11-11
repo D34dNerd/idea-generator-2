@@ -5,7 +5,7 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 ## Commands
 
 - `npm start` – server on http://localhost:8300 (`PORT`, `HOST`, `DB_FILE` override)
-- `npm test` – 72 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
+- `npm test` – 73 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
 - `npm run calibrate [-- --model provider:model]` – real judge against weak and strong reference ideas. It costs money. **Re-run it whenever the judge's prompt, schema or model changes.**
 
 ## Layout
@@ -40,6 +40,7 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 - **Subscription CLIs (`agy:`, `claudecode:`):** no key, cost 0, at most two processes per CLI. The schema goes into the prompt and the JSON is pulled out of the text answer. `claude` gets the prompt on stdin and runs without `ANTHROPIC_API_KEY`, or it would bill the key instead of the subscription. `agy` gets it as an argument, or through `prompt.md` when it is over 20,000 characters or `agy` is a `.cmd` shim. `AGY_BIN` and `CLAUDE_BIN` override the lookup on PATH.
 - **Generators are told what the jury said.** `expand` and `combine` receive the parents' scores and reasons, the board's jury guidance, the latest rejections and the board's overused words (`juryNotes` in `engine.ts`, `juryBrief` in `llm.ts`). One of an expansion's three ideas repairs its parent. Do not take this out: without it ten generations scored a flat 6/15.
 - **Repeats are dropped before they are judged:** same title, or word overlap of 0.5 and up (`DUPLICATE_AT`). Models paraphrase, so overlap only catches near-copies; `overused` and the jury's "similar ideas" handle the rest.
+- **Weak ideas are hidden, never deleted.** "Hide weak" (`hiddenWeak` in `evolve.js`) takes ideas without a medal off the canvas, except seeds, unjudged ideas and the ancestors of anything that stays. They remain in the DB because `juryNotes` builds the generators' list of rejections from them.
 - **The goal holds 4,000 characters.** At 600 a pasted brief was cut before its actual objective.
 - **App settings live in the browser's localStorage.** The server holds them in memory, and the SSE `hello` tells the browser to push them again after a restart. Board configuration lives in the DB.
 - **New boards start from `boardDefaults`** in the app settings (jury guidance, autopilot pace and limits), sent by the browser with `POST /api/boards`. "Use as default for new boards" in a board's settings fills it from that board and copies its model overrides to the app-wide models.

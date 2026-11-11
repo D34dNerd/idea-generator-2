@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clampScore, fitness, medal, medalFromSum, scoreSum } from '../public/js/score.js';
-import { breeders, evolutionStats, expandedIds, kinPairs, nextMove, overused, pairKey, similarity, usedPairs, wordSet } from '../public/js/evolve.js';
+import { breeders, evolutionStats, expandedIds, hiddenWeak, kinPairs, nextMove, overused, pairKey, similarity, usedPairs, wordSet } from '../public/js/evolve.js';
 
 const idea = (id: number, sum: number | null, extra: any = {}) => {
   const base: any = { id, kind: 'expand', generation: 1, medalOverride: null, ...extra };
@@ -172,4 +172,14 @@ test('an idea whose expansion only gave repeats is not expanded again', () => {
   const ideas = [idea(1, 12, { kind: 'seed' }), idea(2, 8, { kind: 'seed' })];
   assert.equal(nextMove(ideas, [], { rng: rngFrom(1) }).idea.id, 1);
   assert.equal(nextMove(ideas, [], { rng: rngFrom(1), noExpand: new Set([1]) }).idea.id, 2);
+});
+
+test('hide weak: no medal and no medalled descendant; seeds and unjudged ideas stay', () => {
+  // seed 1 (weak) → 2 (weak) → 3 (bronze); 1 → 4 (weak) → 5 (weak); 6 unjudged; 7 weak but hand-medalled.
+  const ideas = [
+    idea(1, 5, { kind: 'seed' }), idea(2, 6), idea(3, 9), idea(4, 6), idea(5, 7), idea(6, null), idea(7, 5, { medalOverride: 1 }),
+  ];
+  const edges = [{ from: 1, to: 2 }, { from: 2, to: 3 }, { from: 1, to: 4 }, { from: 4, to: 5 }, { from: 1, to: 6 }];
+  assert.deepEqual([...hiddenWeak(ideas, edges)].sort(), [4, 5], 'the dead branch goes; the path to the bronze stays');
+  assert.equal(hiddenWeak([idea(1, 12), idea(2, 13)], []).size, 0);
 });
