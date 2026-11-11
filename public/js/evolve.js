@@ -5,7 +5,7 @@
 // crossed. Half the time it "mutates" instead, expanding a strong idea that
 // has not been expanded yet, which brings new material into the pool.
 
-import { fitness } from './score.js';
+import { fitness, medal } from './score.js';
 
 export const pairKey = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 
@@ -56,6 +56,28 @@ export function overused(ideas, goal = '', { share = 0.3, min = 8, top = 10 } = 
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, top)
     .map(([w]) => w);
+}
+
+/**
+ * Ideas a board can stop showing: judged, no medal, and not on the way to anything
+ * better. Seeds stay, unjudged ideas stay, and so does every ancestor of an idea
+ * that stays, so a medal never loses its family line. Nothing is deleted: the
+ * jury's rejections are what the generators learn from.
+ */
+export function hiddenWeak(ideas, edges) {
+  const keep = new Set(ideas.filter((i) => i.kind === 'seed' || medal(i) !== 0).map((i) => i.id));
+  const parentsOf = new Map();
+  for (const e of edges) {
+    if (!parentsOf.has(e.to)) parentsOf.set(e.to, []);
+    parentsOf.get(e.to).push(e.from);
+  }
+  const queue = [...keep];
+  while (queue.length) {
+    for (const p of parentsOf.get(queue.pop()) ?? []) {
+      if (!keep.has(p)) { keep.add(p); queue.push(p); }
+    }
+  }
+  return new Set(ideas.filter((i) => !keep.has(i.id)).map((i) => i.id));
 }
 
 /** Ideas that can breed: judged or hand-medalled. */

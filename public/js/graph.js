@@ -35,6 +35,8 @@ export class Graph {
     this.bursts = [];
     this.judging = new Set();
     this.busy = new Set();
+    /** Ids kept off the canvas (weak ideas the user chose not to see). They keep their place for when they return. */
+    this.hidden = new Set();
     this.cam = { x: 0, y: 0, k: 1 };
     this.camTarget = null;
     this.alpha = 1;
@@ -118,6 +120,21 @@ export class Graph {
     this.dirty = true;
   }
 
+  setHidden(ids) {
+    this.hidden = new Set(ids);
+    if (this.hidden.has(this.selected)) this.selected = null;
+    if (this.hidden.has(this.hover)) this.hover = null;
+    this.focusCache.id = null;
+    this.alpha = Math.max(this.alpha, 0.3);
+    this.dirty = true;
+  }
+
+  /** The nodes on the canvas. */
+  visible() {
+    if (!this.hidden.size) return [...this.nodes.values()];
+    return [...this.nodes.values()].filter((n) => !this.hidden.has(n.id));
+  }
+
   setJudging(ids, on) {
     for (const id of ids) on ? this.judging.add(id) : this.judging.delete(id);
     this.dirty = true;
@@ -182,13 +199,14 @@ export class Graph {
   }
 
   fit(instant = false) {
-    if (!this.nodes.size) {
+    const shown = this.visible();
+    if (!shown.length) {
       this.cam = { x: 0, y: 0, k: 1 };
       this.camTarget = null;
       return;
     }
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const n of this.nodes.values()) {
+    for (const n of shown) {
       x0 = Math.min(x0, n.x - n.tr); y0 = Math.min(y0, n.y - n.tr);
       x1 = Math.max(x1, n.x + n.tr); y1 = Math.max(y1, n.y + n.tr);
     }
@@ -224,7 +242,7 @@ export class Graph {
   }
 
   nodeAt(wx, wy, except = null) {
-    const list = [...this.nodes.values()];
+    const list = this.visible();
     for (let i = list.length - 1; i >= 0; i--) {
       const n = list[i];
       if (n.id !== except && Math.hypot(n.x - wx, n.y - wy) <= n.r + 4) return n;
@@ -255,11 +273,11 @@ export class Graph {
   // ------------------------------------------------------------ simulation
 
   tick() {
-    const nodes = [...this.nodes.values()];
+    const nodes = this.visible();
     const a = this.alpha;
     for (const e of this.edges) {
       const s = this.nodes.get(e.from), t = this.nodes.get(e.to);
-      if (!s || !t) continue;
+      if (!s || !t || this.hidden.has(s.id) || this.hidden.has(t.id)) continue;
       let dx = t.x + t.vx - s.x - s.vx, dy = t.y + t.vy - s.y - s.vy;
       const l = Math.hypot(dx, dy) || 1;
       const f = ((l - (s.r + t.r + 90)) / l) * a * 0.22;
@@ -354,7 +372,7 @@ export class Graph {
     // Edges: parent → child, gently curved.
     for (const e of this.edges) {
       const s = this.nodes.get(e.from), t = this.nodes.get(e.to);
-      if (!s || !t) continue;
+      if (!s || !t || this.hidden.has(s.id) || this.hidden.has(t.id)) continue;
       const lit = focus?.edges.has(`${e.from}-${e.to}`);
       const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2;
       const cx = mx + (t.y - s.y) * 0.08, cy = my - (t.x - s.x) * 0.08;
@@ -378,7 +396,7 @@ export class Graph {
       ctx.setLineDash([]);
     }
 
-    for (const n of this.nodes.values()) this.drawNode(n, now, focus, k);
+    for (const n of this.visible()) this.drawNode(n, now, focus, k);
 
     // Gold bursts.
     this.bursts = this.bursts.filter((b) => now - b.born < 1400);

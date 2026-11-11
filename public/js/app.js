@@ -6,7 +6,7 @@ import { t, getLang, getLocale, setLang, nextLang, langLabel, LANGS, applyI18n, 
 import { Graph, KIND_COLORS } from './graph.js';
 import { loadSettings, saveSettings, pushSettings, newBoardConfig, ROLES, PROVIDER_IDS, providersInUse, DEFAULTS } from './settings.js';
 import { medal, scoreSum, fitness, CRITERIA } from './score.js';
-import { evolutionStats } from './evolve.js';
+import { evolutionStats, hiddenWeak } from './evolve.js';
 import { openDashboard } from './dashboard.js';
 import { openReport } from './report.js';
 
@@ -94,8 +94,28 @@ async function openBoard(id) {
   S.selected = null;
   localStorage.setItem('ideagen.board', String(id));
   graph.setData(data.ideas, data.edges, data.judging);
+  applyWeak(true);
   S.stopFollow = follow(id, onEvent);
   renderAll();
+}
+
+/**
+ * "Hide weak": ideas without a medal leave the canvas but stay on the board, where
+ * the generators still learn from what the jury rejected. The choice is remembered.
+ */
+function applyWeak(refit = false) {
+  const weak = hiddenWeak(ideaList(), S.edges);
+  const on = localStorage.getItem('ideagen.hideWeak') === '1';
+  const btn = $('#weak-btn');
+  btn.hidden = !weak.size && !on;
+  btn.setAttribute('aria-pressed', String(on));
+  btn.classList.toggle('on', on);
+  btn.textContent = t(on ? 'showWeak' : 'hideWeak', { n: weak.size });
+  btn.title = t('hideWeakNote');
+  if (on && S.selected != null && weak.has(S.selected)) { S.selected = null; renderPanelSoon(); }
+  const before = graph.hidden.size;
+  graph.setHidden(on ? weak : []);
+  if (refit || (before !== graph.hidden.size && (before === 0 || graph.hidden.size === 0))) graph.fit(refit);
 }
 
 function onEvent(e) {
@@ -116,11 +136,13 @@ function onEvent(e) {
           toast(t('gold', { t: idea.title }), 'good');
         }
       }
+      applyWeak();
       renderPanelSoon();
       break;
     case 'edges':
       for (const ed of e.edges) if (!S.edges.some((x) => x.from === ed.from && x.to === ed.to)) S.edges.push(ed);
       graph.addEdges(e.edges);
+      applyWeak();
       break;
     case 'removed':
       for (const id of e.ids) {
@@ -129,6 +151,7 @@ function onEvent(e) {
         graph.remove(id);
         if (S.selected === id) S.selected = null;
       }
+      applyWeak();
       renderPanelSoon();
       break;
     case 'judging':
@@ -955,11 +978,15 @@ function wire() {
   });
   $('#dashboard-btn').addEventListener('click', () => openDashboard({ onOpenIdea }));
   $('#report-btn').addEventListener('click', () => openReport({ onOpenIdea, onOpenBoard: (id) => openBoard(id) }));
+  $('#weak-btn').addEventListener('click', () => {
+    localStorage.setItem('ideagen.hideWeak', localStorage.getItem('ideagen.hideWeak') === '1' ? '0' : '1');
+    applyWeak();
+  });
   $('#exhibit-btn').addEventListener('click', enterExhibit);
   $('#export-btn').addEventListener('click', exportBoard);
   $('#board-settings-btn').addEventListener('click', boardSettingsDialog);
   $('#app-settings-btn').addEventListener('click', appSettingsDialog);
-  $('#lang-btn').addEventListener('click', () => { setLang(nextLang()); renderAll(); });
+  $('#lang-btn').addEventListener('click', () => { setLang(nextLang()); renderAll(); applyWeak(); });
   $('#zoom-in').addEventListener('click', () => graph.zoomBy(1.25));
   $('#zoom-out').addEventListener('click', () => graph.zoomBy(0.8));
   $('#fit-btn').addEventListener('click', () => graph.fit());
