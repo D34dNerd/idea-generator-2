@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_APP_SETTINGS, extractJson, keyFor, listModels, makeChat, mergeAppSettings, parseModel, ProviderError, type AppSettings,
+  DEFAULT_APP_SETTINGS, extractJson, keyFor, listModels, probeModels, makeChat, mergeAppSettings, parseModel, ProviderError, type AppSettings,
 } from '../server/providers.ts';
 
 type Seen = { path: string; headers: Record<string, any>; body: any };
@@ -249,6 +249,18 @@ test('agy: an exhausted quota is reported as rate_limited, a missing binary as u
   process.env.AGY_BIN = join(tmpdir(), 'no-such-agy-binary');
   await assert.rejects(chat(req('agy:gemini-3.8-flash-high')), (e: any) => e instanceof ProviderError && e.code === 'unreachable');
   await assert.rejects(listModels(settingsWith({}), 'agy'), (e: any) => e.code === 'unreachable');
+}));
+
+test('Test button: a CLI is checked with a real call to each model the roles use on it', () => withCli(async () => {
+  const s = settingsWith({});
+  s.models.expand = 'agy:gemini-3.8-flash-high';
+  s.models.combine = 'agy:gemini-3.8-flash-high';
+  s.models.distill = 'agy:gemini-3.8-flash-low';
+  assert.deepEqual((await probeModels(s, 'agy')).sort(), ['agy:gemini-3.8-flash-high', 'agy:gemini-3.8-flash-low']);
+  assert.ok(lastCli().args.includes('90s'), 'a short timeout: this is a test, not work');
+  assert.deepEqual(await probeModels(s, 'openrouter'), [], 'API providers are tested by listing their models');
+  s.models.combine = 'agy:nope-3.8';
+  await assert.rejects(probeModels(s, 'agy'), (e: any) => e instanceof ProviderError && /agy:nope-3\.8/.test(e.message) && /unknown model/.test(e.message));
 }));
 
 test('claudecode: prompt on stdin, subscription not API key, tools off', () => withCli(async () => {

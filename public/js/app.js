@@ -807,10 +807,10 @@ function appSettingsDialog() {
             result.textContent = '…';
             try {
               await saveFromForm(false);
-              const { models } = await api('POST', `/api/providers/${p}/models`, {});
+              const { models, checked } = await api('POST', `/api/providers/${p}/models`, {});
               modelCatalog.set(p, models);
               refreshModelList();
-              result.textContent = t('testOk', { n: models.length });
+              result.textContent = checked?.length ? t('testRan', { m: checked.join(', ') }) : t('testOk', { n: models.length });
             } catch (e) { result.textContent = errorText(e); }
           },
         }, t('test')), result),

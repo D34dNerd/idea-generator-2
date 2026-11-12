@@ -95,9 +95,9 @@ function outerJson(text: string): any {
 }
 
 const LIMIT = /RESOURCE_EXHAUSTED|rate.?limit|\b429\b|quota|usage limit|limit reached/i;
-function failure(label: string, r: Run, detail: string): CliError {
+function failure(label: string, r: Run, detail: string, timeoutS = TIMEOUT_S): CliError {
   const text = `${detail} ${r.stderr}`.replace(/\s+/g, ' ').trim().slice(0, 300);
-  if (r.timedOut || /print_timeout|DEADLINE_EXCEEDED/.test(text)) return new CliError('timeout', `${label}: no answer within ${TIMEOUT_S} s`);
+  if (r.timedOut || /print_timeout|DEADLINE_EXCEEDED/.test(text)) return new CliError('timeout', `${label}: no answer within ${timeoutS} s`);
   if (LIMIT.test(text)) return new CliError('rate_limited', `${label}: the subscription's usage limit is reached. ${text}`);
   if (/not logged in|login|authenticat|unauthori/i.test(text)) return new CliError('bad_key', `${label}: not signed in. Open the CLI once in a terminal and sign in. ${text}`);
   return new CliError('provider_error', `${label} (exit ${r.code}): ${text || 'no output'}`);
@@ -118,7 +118,7 @@ async function withSlot<T>(id: CliId, fn: () => Promise<T>): Promise<T> {
 }
 
 /** One headless turn. Returns the model's text answer. */
-export async function cliText(id: CliId, model: string, prompt: string): Promise<string> {
+export async function cliText(id: CliId, model: string, prompt: string, timeoutS = TIMEOUT_S): Promise<string> {
   const { label } = CLIS[id];
   const cmd = findBin(id);
   if (!cmd) throw new CliError('unreachable', `${label}: "${CLIS[id].bin}" is not on PATH. Install it, or set ${CLIS[id].env} to its full path.`);
@@ -135,11 +135,11 @@ export async function cliText(id: CliId, model: string, prompt: string): Promise
           await writeFile(join(cwd, 'prompt.md'), prompt, 'utf8');
           arg = 'Read the file prompt.md in the current folder and do exactly what it says. Reply with only the JSON it asks for.';
         }
-        r = await run(cmd, ['-p', arg, '--model', model, '--mode', 'accept-edits', '--output-format', 'json', '--print-timeout', `${TIMEOUT_S}s`], {
-          cwd, timeoutMs: (TIMEOUT_S + 30) * 1000,
+        r = await run(cmd, ['-p', arg, '--model', model, '--mode', 'accept-edits', '--output-format', 'json', '--print-timeout', `${timeoutS}s`], {
+          cwd, timeoutMs: (timeoutS + 30) * 1000,
         });
         const out = outerJson(r.stdout);
-        if (r.code !== 0 || out?.status !== 'SUCCESS') throw failure(label, r, [out?.error, out?.finished_reason, out ? '' : r.stdout.slice(0, 200)].filter(Boolean).join(' '));
+        if (r.code !== 0 || out?.status !== 'SUCCESS') throw failure(label, r, [out?.error, out?.finished_reason, out ? '' : r.stdout.slice(0, 200)].filter(Boolean).join(' '), timeoutS);
         return String(out.response ?? '');
       }
       // Claude Code reads the prompt from stdin. Without an API key in its environment it uses the
@@ -149,11 +149,11 @@ export async function cliText(id: CliId, model: string, prompt: string): Promise
       delete env.ANTHROPIC_AUTH_TOKEN;
       delete env.ANTHROPIC_BASE_URL;
       r = await run(cmd, ['-p', '--output-format', 'json', '--model', model, '--disallowedTools', 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch'], {
-        cwd, stdin: prompt, timeoutMs: (TIMEOUT_S + 30) * 1000, env,
+        cwd, stdin: prompt, timeoutMs: (timeoutS + 30) * 1000, env,
       });
       const parsed = outerJson(r.stdout);
       const out = Array.isArray(parsed) ? parsed.findLast((m: any) => m?.type === 'result') : parsed;
-      if (r.code !== 0 || !out || out.is_error) throw failure(label, r, [out?.result, out?.subtype, out ? '' : r.stdout.slice(0, 200)].filter(Boolean).join(' '));
+      if (r.code !== 0 || !out || out.is_error) throw failure(label, r, [out?.result, out?.subtype, out ? '' : r.stdout.slice(0, 200)].filter(Boolean).join(' '), timeoutS);
       return String(out.result ?? '');
     } catch (e: any) {
       if (e instanceof CliError) throw e;
@@ -164,7 +164,8 @@ export async function cliText(id: CliId, model: string, prompt: string): Promise
   });
 }
 
-/** Connection test: the CLI starts and reports a version. The models are suggestions; any name the CLI accepts works. */
+/** Connection test: the CLI starts and reports a version. The models are suggestions; any name the CLI accepts works,
+ * and only a real call tells whether a name is accepted (see probeModels in providers.ts). */
 export async function cliModels(id: CliId): Promise<string[]> {
   const { label } = CLIS[id];
   const cmd = findBin(id);

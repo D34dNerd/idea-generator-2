@@ -9,7 +9,7 @@ import type { Repo, Idea, Board } from './db.ts';
 import { AppError, type Engine } from './engine.ts';
 import type { Autopilot } from './autopilot.ts';
 import { toLang, type Lang } from './llm.ts';
-import { PROVIDERS, keySource, listModels, mergeAppSettings, type AppSettings, type ProviderId } from './providers.ts';
+import { PROVIDERS, keySource, listModels, mergeAppSettings, probeModels, type AppSettings, type ProviderId } from './providers.ts';
 import { fitness, medal, scoreSum } from '../public/js/score.js';
 
 export type Runtime = {
@@ -205,7 +205,8 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
     ['POST', /^\/api\/providers\/([a-z]+)\/models$/, async ([id]) => {
       if (!(id in PROVIDERS)) throw new AppError(404, 'not_found', 'Unknown provider');
       try {
-        return { models: await listModels(runtime.get(), id as ProviderId) };
+        const models = await listModels(runtime.get(), id as ProviderId);
+        return { models, checked: await probeModels(runtime.get(), id as ProviderId) };
       } catch (e: any) {
         throw new AppError(502, e?.code ?? 'provider_error', e?.message ?? String(e));
       }
