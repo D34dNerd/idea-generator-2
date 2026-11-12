@@ -126,3 +126,68 @@ test('autoStep with the real engine: judge first, grow a small pool, then breed'
   assert.ok(ideas.every((i) => i.judgedAt), 'every step leaves its ideas judged');
   assert.ok(ideas.some((i) => i.kind === 'combine' && i.generation >= 2));
 });
+
+test('autoStep on a stuck board: a fresh seed (a scout lead first), expanded next; it stops after two that do not help', async () => {
+  const repo = openDb(':memory:');
+  const asked: string[] = [];
+  let n = 0;
+  const chat = async (r: ChatRequest) => {
+    asked.push(r.schemaName);
+    n++;
+    const value =
+      r.schemaName === 'expand' ? { candidates: [], ideas: [1, 2, 3].map((k) => ({ title: `Gren ${n}.${k}`, pitch: `unik${n}x${k} text` })) }
+      : r.schemaName === 'judgement' ? { reason: 'r', originality: 2, feasibility: 2, impact: 2, keywords: ['k'] }
+      : { title: `Nytt frö ${n}`, pitch: `helt annan riktning nummer ${n}` };
+    return { value, costUsd: 0 };
+  };
+  const engine = createEngine({ repo, chat, settings: () => DEFAULT_APP_SETTINGS, gitInit: false });
+  const board = repo.createBoard({ title: 'B', goal: 'Mål' });
+  const add = (title: string, kind: string, s: number) => {
+    const i = repo.insertIdea({ boardId: board.id, title, pitch: '', kind: kind as any, x: 0, y: 0, generation: kind === 'seed' ? 0 : 1 });
+    repo.saveJudgement(i.id, { originality: s, feasibility: s, impact: s, reason: 'r' });
+    return i;
+  };
+  add('Bästa fröet', 'seed', 4);
+  for (let k = 0; k < 8; k++) add(`Platt ${k}`, 'combine', 2);
+  repo.replaceLeads(board.id, 'research', [{ title: 'Spår från forskningen', summary: 'Ett fynd', hook: 'h', url: 'https://example.org/p', meta: {} }]);
+
+  const first = await engine.autoStep(board.id);
+  assert.equal(first.did, 'seed');
+  assert.ok(!asked.includes('seed'), 'an unused lead is planted without a model call');
+  const planted = repo.getIdea(first.ids![0])!;
+  assert.equal(planted.title, 'Spår från forskningen');
+  assert.equal(planted.kind, 'seed');
+  assert.ok(planted.judgedAt, 'and judged in the same step');
+  assert.equal(repo.listLeads(board.id)[0].ideaId, planted.id);
+
+  const second = await engine.autoStep(board.id);
+  assert.equal(second.did, 'expand', 'the fresh seed is expanded before breeding');
+  assert.deepEqual(repo.parentsOf(second.ids![0]).map((p) => p.id), [planted.id]);
+
+  // Eight more without progress: no lead left, so the model writes the second fresh seed.
+  for (let k = 0; k < 5; k++) add(`Platt igen ${k}`, 'combine', 2);
+  asked.length = 0;
+  const third = await engine.autoStep(board.id);
+  assert.equal(third.did, 'seed');
+  assert.ok(asked.includes('seed'));
+  for (let k = 0; k < 8; k++) add(`Fortfarande platt ${k}`, 'combine', 2);
+  assert.deepEqual(await engine.autoStep(board.id), { did: 'idle', reason: 'exhausted' });
+});
+
+test('the summary\'s gaps reach the generators', async () => {
+  const repo = openDb(':memory:');
+  const prompts: string[] = [];
+  const chat = async (r: ChatRequest) => {
+    prompts.push(r.user);
+    return { value: { candidates: [], ideas: [{ title: 'Sintetizador no navegador', pitch: 'p' }] }, costUsd: 0 };
+  };
+  const engine = createEngine({ repo, chat, settings: () => DEFAULT_APP_SETTINGS, gitInit: false });
+  const board = repo.createBoard({ title: 'B' });
+  const seed = repo.insertIdea({ boardId: board.id, title: 'Solda térmica', pitch: '', kind: 'seed', x: 0, y: 0, generation: 0 });
+  repo.setSummary(board.id, {
+    headline: 'h', themes: [], strongest: [], nextSteps: [], ideaCount: 1, lang: 'pt', createdAt: '2026-11-12',
+    gaps: ['Aplicações 100% digitais que as IAs constroem sozinhas'],
+  });
+  await engine.expand(seed.id);
+  assert.match(prompts[0], /gaps toward the goal:\n- Aplicações 100% digitais/);
+});

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clampScore, fitness, medal, medalFromSum, scoreSum } from '../public/js/score.js';
-import { breeders, evolutionStats, expandedIds, hiddenWeak, kinPairs, nextMove, overused, pairKey, similarity, usedPairs, wordSet } from '../public/js/evolve.js';
+import { breeders, evolutionStats, expandedIds, hiddenWeak, kinPairs, nextMove, overused, pairKey, similarity, stagnation, usedPairs, wordSet } from '../public/js/evolve.js';
 
 const idea = (id: number, sum: number | null, extra: any = {}) => {
   const base: any = { id, kind: 'expand', generation: 1, medalOverride: null, ...extra };
@@ -182,4 +182,33 @@ test('hide weak: no medal and no medalled descendant; seeds and unjudged ideas s
   const edges = [{ from: 1, to: 2 }, { from: 2, to: 3 }, { from: 1, to: 4 }, { from: 4, to: 5 }, { from: 1, to: 6 }];
   assert.deepEqual([...hiddenWeak(ideas, edges)].sort(), [4, 5], 'the dead branch goes; the path to the bronze stays');
   assert.equal(hiddenWeak([idea(1, 12), idea(2, 13)], []).size, 0);
+});
+
+test('stagnation: eight ideas without beating the best call for a fresh seed; two fresh seeds that do not help stop it', () => {
+  const seed = idea(1, 12, { kind: 'seed' });
+  const flat = (from: number, n: number) => Array.from({ length: n }, (_, k) => idea(from + k, 7));
+  assert.equal(stagnation([]).state, 'growing');
+  assert.equal(stagnation([seed, ...flat(2, 7)]).state, 'growing', 'seven is not yet stuck');
+  assert.deepEqual(stagnation([seed, ...flat(2, 8)]), { state: 'stalled', since: 8, seeds: 0, bestId: 1, lastSeedId: null });
+  assert.equal(stagnation([seed, ...flat(2, 8), idea(10, 13)]).state, 'growing', 'a new best starts the count again');
+  assert.equal(stagnation([seed, ...flat(2, 8), idea(10, null)]).state, 'stalled', 'unjudged ideas do not count');
+  const one = [seed, ...flat(2, 8), idea(10, 8, { kind: 'seed' })];
+  assert.deepEqual(stagnation(one), { state: 'growing', since: 0, seeds: 1, bestId: 1, lastSeedId: 10 }, 'a fresh seed opens a new count');
+  assert.equal(stagnation([...one, ...flat(11, 8)]).state, 'stalled');
+  const two = [...one, ...flat(11, 8), idea(19, 8, { kind: 'seed' }), ...flat(20, 8)];
+  assert.equal(stagnation(two).state, 'exhausted');
+  assert.equal(stagnation([...two, idea(28, 14)]).state, 'growing', 'until something beats the best');
+});
+
+test('overused: forms of one word count together', () => {
+  // Half the board on solder heat, never twice in the same form: as on a real board that went eleven generations without a medal.
+  const forms = ['Roteador de solda térmico', 'Soldagem com cadência térmica', 'Soldar placas com rota térmica', 'Partitura para soldagem térmica', 'Escape térmico da solda'];
+  const ideas = [
+    ...forms.map((t, n) => text(n + 1, t)),
+    ...['Horta comunitária', 'Jogo de ritmo no navegador', 'Sintetizador visual', 'Mapa de bairros', 'Leitor de partituras'].map((t, n) => text(n + 10, t)),
+  ];
+  const stuck = overused(ideas, 'Projetos que IAs constroem');
+  assert.ok(stuck.some((w: string) => w.startsWith('sold')), `solder family: ${stuck}`);
+  assert.ok(stuck.some((w: string) => w.startsWith('term')), `heat family: ${stuck}`);
+  assert.ok(!stuck.includes('horta'), 'one idea is not a rut');
 });

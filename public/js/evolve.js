@@ -42,20 +42,38 @@ const GLUE = new Set(
 );
 
 /**
- * Words the board is stuck on: those in at least `share` of its ideas, most common
- * first, leaving out the goal's own words (the goal is supposed to be everywhere).
- * Empty until the board has `min` ideas.
+ * Words of one family share a stem here: the first five letters. Crude, but it is what lets
+ * "solda", "soldagem" and "soldar", or "térmico" and "térmicas", count as one rut. Measured on a
+ * board where half the ideas were about solder heat, no single form reached the threshold.
+ */
+const stem = (w) => (w.length > 5 ? w.slice(0, 5) : w);
+
+/**
+ * Words the board is stuck on: word families in at least `share` of its ideas, most common
+ * first, each shown in its most frequent form, leaving out the goal's own words (the goal is
+ * supposed to be everywhere). Empty until the board has `min` ideas.
  */
 export function overused(ideas, goal = '', { share = 0.3, min = 8, top = 10 } = {}) {
   if (ideas.length < min) return [];
-  const inGoal = new Set([...wordSet({ title: goal }), ...GLUE]);
-  const count = new Map();
-  for (const i of ideas) for (const w of wordSet(i)) if (!inGoal.has(w)) count.set(w, (count.get(w) ?? 0) + 1);
+  const skip = new Set([...wordSet({ title: goal }), ...GLUE].map(stem));
+  const count = new Map(); // stem → ideas that use it
+  const forms = new Map(); // stem → form → uses
+  for (const i of ideas) {
+    const seen = new Set();
+    for (const w of wordSet(i)) {
+      const k = stem(w);
+      if (skip.has(k)) continue;
+      if (!forms.has(k)) forms.set(k, new Map());
+      forms.get(k).set(w, (forms.get(k).get(w) ?? 0) + 1);
+      if (!seen.has(k)) { seen.add(k); count.set(k, (count.get(k) ?? 0) + 1); }
+    }
+  }
+  const shown = (k) => [...forms.get(k)].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))[0][0];
   return [...count]
     .filter(([, n]) => n / ideas.length >= share)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, top)
-    .map(([w]) => w);
+    .map(([k]) => shown(k));
 }
 
 /**
@@ -212,4 +230,33 @@ export function evolutionStats(ideas, window = 8) {
     latest: bred.length > window ? mean(bred.slice(-window)) : null,
     best: bred.length ? Math.max(...bred.map(fitness)) : null,
   };
+}
+
+/** Ideas after the best one that may fail to beat it before the board is called stuck. */
+export const STALL_AFTER = 8;
+/** Fresh seeds planted after the best before the autopilot gives up and says so. */
+export const FRESH_SEEDS = 2;
+
+/**
+ * Has the board stopped improving? Crossing the same pool again and again only
+ * rewords it: once STALL_AFTER new ideas in a row fail to beat the best, new
+ * material is needed (a fresh seed). Each seed planted after the best starts a
+ * new count. When FRESH_SEEDS seeds have not helped either, the board is
+ * exhausted and the autopilot stops spending on it.
+ *
+ * Returns { state: 'growing' | 'stalled' | 'exhausted', since, seeds, bestId, lastSeedId }.
+ * `since` counts judged, non-seed ideas after the best (or after the last fresh seed).
+ */
+export function stagnation(ideas, { after = STALL_AFTER, seeds = FRESH_SEEDS } = {}) {
+  const ordered = [...ideas].sort((a, b) => a.id - b.id);
+  const judged = ordered.filter((i) => fitness(i) != null);
+  if (!judged.length) return { state: 'growing', since: 0, seeds: 0, bestId: null, lastSeedId: null };
+  let best = judged[0];
+  for (const i of judged) if (fitness(i) > fitness(best)) best = i;
+  const fresh = ordered.filter((i) => i.id > best.id && i.kind === 'seed');
+  const lastSeedId = fresh.length ? fresh[fresh.length - 1].id : null;
+  const mark = lastSeedId ?? best.id;
+  const since = judged.filter((i) => i.id > mark && i.kind !== 'seed').length;
+  const state = since < after ? 'growing' : fresh.length >= seeds ? 'exhausted' : 'stalled';
+  return { state, since, seeds: fresh.length, bestId: best.id, lastSeedId };
 }

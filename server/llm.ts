@@ -118,7 +118,8 @@ const fmtIdea = (i: Pitch) => (i.pitch ? `${i.title}: ${i.pitch}` : i.title);
 /** What the jury said about an idea, for the model that will build on it. */
 export type Verdict = { originality: number; feasibility: number; impact: number; reason: string };
 /** What a generator is told about the jury: the board's own instructions, recent rejections, worn-out words. */
-export type JuryNotes = { guidance?: string; rejections?: string[]; stuck?: string[] };
+/** gaps: what the board's last summary said is missing toward the goal. */
+export type JuryNotes = { guidance?: string; rejections?: string[]; stuck?: string[]; gaps?: string[] };
 
 const fmtVerdict = (v: Verdict) =>
   `originality ${v.originality}/5, feasibility ${v.feasibility}/5, impact ${v.impact}/5 (${v.originality + v.feasibility + v.impact}/15). ${v.reason}`.trim();
@@ -142,6 +143,11 @@ function juryBrief(n: JuryNotes = {}) {
     parts.push(
       `The board is stuck: these words run through a large share of its ideas: ${n.stuck.join(', ')}. ` +
         'More of the same will not score. Unless an idea cannot exist without them, build ideas that are about something else.',
+    );
+  if (n.gaps?.length)
+    parts.push(
+      `A review of this board found these gaps toward the goal:\n${n.gaps.map((g) => `- ${g}`).join('\n')}\n` +
+        'An idea that closes one of them is worth more here than another variation of what the board already has.',
     );
   return parts.join('\n\n');
 }
@@ -305,6 +311,33 @@ export function makeLLM(chat: ChatFn) {
         a.url ? `Source: ${a.url}` : '',
         `---\n${a.text}\n---`,
         context(a.board, []),
+        languageRule(a.lang),
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      const { value, costUsd } = await gen(a.model, a.flow.system, user, 'seed', PITCH_SCHEMA);
+      const idea = tidy(value);
+      if (!idea.title) throw new Error('The model returned no idea');
+      return { idea, costUsd };
+    },
+
+    /**
+     * A new seed for a board that has stopped improving: the same pool crossed again only
+     * rewords itself, so this starts from somewhere the board has not been.
+     */
+    async fresh(a: {
+      model: string; flow: Flow; board: BoardCtx; lang: Lang; existingTitles: string[];
+      best: { title: string; pitch: string; sum: number; reason: string }[]; since: number; jury?: JuryNotes;
+    }) {
+      const user = [
+        `This board has stopped improving: the last ${a.since} ideas did not beat its best. Crossing the same ideas again will only reword them.`,
+        a.best.length
+          ? `Its strongest ideas so far, with the jury's view:\n${a.best.map((i) => `- ${fmtIdea(i)} [jury ${i.sum}/15: ${i.reason}]`).join('\n')}`
+          : '',
+        context(a.board, a.existingTitles),
+        juryBrief(a.jury),
+        'Write ONE new seed idea that serves the goal from a different starting point: another user, another problem, another mechanism or another market than the ideas above. ' +
+          'If gaps are listed, close one of them. It must be concrete enough for this jury to score well on its own, not a theme for later work.',
         languageRule(a.lang),
       ]
         .filter(Boolean)
