@@ -400,3 +400,21 @@ export async function listModels(settings: AppSettings, p: ProviderId): Promise<
     throw new ProviderError('unreachable', `${PROVIDERS[p].label}: ${e?.cause?.code ?? e.message}`);
   }
 }
+
+/**
+ * For a subscription CLI, `--version` says nothing about model names: a wrong name only fails
+ * on the first real call, which the autopilot then retries in silence. So the Test button also
+ * sends one short prompt to every model the roles use on this CLI. Returns the models it called.
+ */
+export async function probeModels(settings: AppSettings, p: ProviderId): Promise<string[]> {
+  if (PROVIDERS[p].type !== 'cli') return [];
+  const used = [...new Set(ROLES.map((r) => settings.models[r]).filter((ref) => ref?.startsWith(`${p}:`)))];
+  await Promise.all(used.map(async (ref) => {
+    try {
+      await cliText(p as CliId, parseModel(ref).model, 'Reply with the word OK and nothing else.', 90);
+    } catch (e: any) {
+      throw new ProviderError(e?.code ?? 'provider_error', `${ref}: ${e?.message ?? e}`);
+    }
+  }));
+  return used;
+}
