@@ -10,6 +10,7 @@ import { createEngine } from '../server/engine.ts';
 import { createAutopilot } from '../server/autopilot.ts';
 import { createHandler } from '../server/app.ts';
 import { DEFAULT_APP_SETTINGS, ProviderError, type AppSettings, type ChatRequest } from '../server/providers.ts';
+import { medal, scoreSum } from '../public/js/score.js';
 
 const calls: ChatRequest[] = [];
 let judgeScores = { originality: 3, feasibility: 3, impact: 3 };
@@ -474,6 +475,46 @@ test('expand and combine are told what the jury said, and the jury sees similar 
   const judged = lastCall('judgement').user;
   assert.match(judged, /Similar ideas already on the board:\n- /, 'originality is judged against the board');
   judgeScores = { originality: 3, feasibility: 3, impact: 3 };
+});
+
+test('goal fit: off the goal earns no medal, and every generation is shown where its line started', async () => {
+  const board = await newBoard({ goal: 'Guias de montagem em realidade aumentada', lang: 'pt' });
+  (judgeScores as any) = { originality: 4, feasibility: 4, impact: 4, fit: 5 };
+  const s = await seed(board.id, 'Guia RA para montar móveis');
+  await engine.idle();
+  assert.equal(repo.getIdea(s.id)!.fit, 5);
+  const j = lastCall('judgement');
+  assert.match(j.system, /GOAL FIT/);
+  assert.deepEqual((j.schema as any).required.slice(0, 2), ['reason', 'fit']);
+
+  (judgeScores as any) = { originality: 5, feasibility: 4, impact: 4, fit: 2 };
+  const { data: e } = await api('POST', `/api/ideas/${s.id}/expand`, {});
+  assert.match(lastCall('expand').user, /goal fit 5\/5/, "the parent's fit travels with its verdict");
+  await engine.idle();
+  const drifted = repo.getIdea(e.ideas[0].id)!;
+  assert.equal(drifted.fit, 2);
+  assert.equal(scoreSum(drifted), 13);
+  assert.equal(medal(drifted), 0, 'a gold sum off the goal is no medal');
+
+  // A grandchild's generator sees the seed the line started from, with the jury's verdict on it.
+  await api('POST', `/api/ideas/${drifted.id}/expand`, {});
+  const grand = lastCall('expand').user;
+  assert.match(grand, /Where this line of ideas started:\n- Guia RA para montar móveis\n  Jury: originality 4\/5/);
+  assert.match(grand, /goal fit 2\/5 \(off the goal: no medal\)/);
+  assert.match(grand, /What the jury recently rejected/, 'an off-goal verdict counts as a rejection');
+  await engine.idle();
+  judgeScores = { originality: 3, feasibility: 3, impact: 3 };
+});
+
+test('with no written goal, the first seed is what fit is judged against', async () => {
+  const board = await newBoard({ goal: '' });
+  const first = await seed(board.id, 'Guia RA para montar móveis');
+  await engine.idle();
+  assert.match(lastCall('judgement').user, /The board has no goal: score fit 5\./);
+  assert.equal(repo.getIdea(first.id)!.fit, 5);
+  await seed(board.id, 'Pão de fermentação natural');
+  await engine.idle();
+  assert.match(lastCall('judgement').user, /It started from this idea[^\n]*\nGuia RA para montar móveis/);
 });
 
 test('a repeat is dropped before it is judged', async () => {

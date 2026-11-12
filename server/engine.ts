@@ -12,8 +12,8 @@ import { fetchPapers as realFetchPapers, researchLeads, xLeads } from './leads.t
 import { writeBrief, writeProject } from './project.ts';
 import { writeNote } from './vault.ts';
 import { ProviderError, type AppSettings, type ChatFn, type Role } from './providers.ts';
-import { fitness, isJudged, medal, scoreSum } from '../public/js/score.js';
-import { DUPLICATE_AT, nextMove, overused, pairKey, similarity, stagnation, wordSet } from '../public/js/evolve.js';
+import { fitness, isJudged, medal, onGoal, scoreSum } from '../public/js/score.js';
+import { DUPLICATE_AT, nextMove, overused, pairKey, rootsOf, similarity, stagnation, wordSet } from '../public/js/evolve.js';
 
 export class AppError extends Error {
   status: number;
@@ -100,17 +100,30 @@ export function createEngine(deps: Deps) {
   // ---------------------------------------------------------------- what generators learn from the jury
 
   const verdictOf = (i: Idea): Verdict | null =>
-    isJudged(i) ? { originality: i.originality!, feasibility: i.feasibility!, impact: i.impact!, reason: i.reason ?? '' } : null;
+    isJudged(i) ? { originality: i.originality!, feasibility: i.feasibility!, impact: i.impact!, fit: i.fit, reason: i.reason ?? '' } : null;
 
-  /** The board's jury instructions, its latest rejections (no medal), and the words it is stuck on. */
-  function juryNotes(board: Board, ideas: Idea[]): JuryNotes {
+  /**
+   * The board's jury instructions, its latest rejections (no medal, or off the goal), the words it
+   * is stuck on, the summary's gaps, and, for a generator building on `parents`, the seeds that
+   * line started from with the jury's verdict on each.
+   */
+  function juryNotes(board: Board, ideas: Idea[], parents: Idea[] = []): JuryNotes {
     const rejections: string[] = [];
     for (let n = ideas.length - 1; n >= 0 && rejections.length < 6; n--) {
       const sum = scoreSum(ideas[n]);
       const reason = (ideas[n].reason ?? '').trim().slice(0, 240);
-      if (sum != null && sum < 9 && reason && !rejections.includes(reason)) rejections.push(reason);
+      if (sum != null && (sum < 9 || !onGoal(ideas[n])) && reason && !rejections.includes(reason)) rejections.push(reason);
     }
-    return { guidance: board.config.judgeGuidance, rejections, stuck: overused(ideas, board.goal), gaps: (board.summary?.gaps ?? []).slice(0, 4) };
+    const byId = new Map(ideas.map((i) => [i.id, i]));
+    const parentIds = new Set(parents.map((p) => p.id));
+    // A parent that is itself a root already reaches the generator with its verdict.
+    const origin = rootsOf([...parentIds], repo.listEdges(board.id))
+      .filter((id) => !parentIds.has(id))
+      .slice(0, 3)
+      .map((id) => byId.get(id))
+      .filter((i): i is Idea => !!i)
+      .map((i) => ({ title: i.title, pitch: i.pitch, verdict: verdictOf(i) }));
+    return { guidance: board.config.judgeGuidance, rejections, stuck: overused(ideas, board.goal), gaps: (board.summary?.gaps ?? []).slice(0, 4), origin };
   }
 
   /** A rewording of something already on the board (or of an earlier idea in the same batch)? */
@@ -187,6 +200,13 @@ export function createEngine(deps: Deps) {
       .map((x) => ({ title: x.o.title, pitch: x.o.pitch }));
   }
 
+  /** With no written goal, the board's first idea is what the others must stay on. */
+  function anchorFor(board: Board, idea: Idea) {
+    if (board.goal.trim()) return null;
+    const first = repo.listIdeas(board.id).find((i) => i.kind === 'seed');
+    return first && first.id !== idea.id ? { title: first.title, pitch: first.pitch } : null;
+  }
+
   async function judge(ideaId: number) {
     const idea = mustIdea(ideaId);
     const board = mustBoard(idea.boardId);
@@ -195,7 +215,7 @@ export function createEngine(deps: Deps) {
       const { judgement } = await call(board.id, () =>
         llm.judge({
           model: modelFor(board, 'judge'), board, idea, lang: board.config.lang,
-          guidance: board.config.judgeGuidance, vocabulary: repo.keywordVocabulary(), similar: similarTo(idea),
+          guidance: board.config.judgeGuidance, vocabulary: repo.keywordVocabulary(), similar: similarTo(idea), anchor: anchorFor(board, idea),
         }),
       );
       repo.saveJudgement(idea.id, judgement);
@@ -267,7 +287,7 @@ export function createEngine(deps: Deps) {
     const { ideas: drafted } = await call(board.id, () =>
       llm.expand({
         model: modelFor(board, 'expand'), flow: board.config.flow, board, idea: parent, existingTitles: onBoard.map((i) => i.title),
-        lang: board.config.lang, verdict: verdictOf(parent), jury: juryNotes(board, onBoard),
+        lang: board.config.lang, verdict: verdictOf(parent), jury: juryNotes(board, onBoard, [parent]),
       }),
     );
     // Repeats are dropped before they cost a judgement and a place on the board.
@@ -297,7 +317,7 @@ export function createEngine(deps: Deps) {
     const { idea } = await call(board.id, () =>
       llm.combine({
         model: modelFor(board, 'combine'), flow: board.config.flow, board, a, b: c, existingTitles: onBoard.map((i) => i.title),
-        lang: board.config.lang, verdicts: [verdictOf(a), verdictOf(c)], jury: juryNotes(board, onBoard),
+        lang: board.config.lang, verdicts: [verdictOf(a), verdictOf(c)], jury: juryNotes(board, onBoard, [a, c]),
       }),
     );
     if (isRepeat(idea, onBoard)) {

@@ -5,7 +5,7 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 ## Commands
 
 - `npm start` – server on http://localhost:8300 (`PORT`, `HOST`, `DB_FILE` override)
-- `npm test` – 78 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
+- `npm test` – 83 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
 - `npm run calibrate [-- --model provider:model]` – real judge against weak and strong reference ideas. It costs money. **Re-run it whenever the judge's prompt, schema or model changes.**
 
 ## Layout
@@ -32,6 +32,8 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 ## Rules that matter
 
 - **The medal comes from code, not the model:** a sum of three 1–5 scores, bronze from 9, silver from 11, gold from 13 (`score.js`). Left uncalibrated, an LLM jury gave 3/3 to the bare word "fire"; the calibration test keeps that from happening here.
+- **Goal fit gates the medal.** The judge also scores `fit` 1–5 (how directly the idea serves the board's goal; with no goal, the board's first seed stands in). Below 3 (`FIT_MIN`, `onGoal` in `score.js`) an idea gets no medal and is left out of `population`, so it is never bred; seeds and hand-set medals are exempt. It does not change the 3–15 sum or the thresholds. A model that leaves `fit` out gives `null`, which counts as on the goal. Stagnation counts off-goal ideas as attempts but never as the best.
+- **Every generator sees where its line started.** `juryNotes(board, ideas, parents)` adds the root seeds of the parents' lineage (`rootsOf`) with the jury's verdict on each; off-goal verdicts join the rejections. Without an anchor, a board meant for AR assembly guides reached bread in ten generations of small, well-scored steps.
 - **Never put integer `minimum`/`maximum` in a JSON schema.** Anthropic rejects them. Put the range in the description and clamp in code.
 - **Anthropic native: send no `temperature`.** API version 2026-10-21 rejects it. Use effort `low`. The SDK sends the key as a Bearer token.
 - **OpenRouter: send `reasoning:{enabled:false}`** and retry without it on a 400 that mentions reasoning (some models insist on reasoning).
@@ -67,5 +69,5 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 - **X scout:** about 48 s and $0.04 per refresh; 5 of 6 leads were cited.
 - **Before the jury feedback loop** (142 ideas on three boards, 2026-11-11): mean score flat at 6.0–6.75 over ten generations; a goal cut at 600 characters; 90 % of one board's ideas variations of one concept. Word overlap between an idea and its nearest earlier idea: median 0.26, so 0.5 is a near-copy.
 - **A board stuck on one theme** (2026-11-12, before #9): 11 generations, mean 6.1 → 7.0, best 8, no medal; about half the ideas on solder heat. The summary named the gaps, but generators never saw them, and `overused` missed the theme because no single word form reached 30 %.
-- **Not yet measured:** `agy:` and `claudecode:` against the real CLIs (only fake binaries), and the judge after the `JUDGE_SYSTEM` change (similar ideas, two-sentence reason). Run `npm run calibrate -- --model claudecode:sonnet`.
+- **Not yet measured:** the judge after the `JUDGE_SYSTEM` changes (similar ideas, two-sentence reason, goal fit). Calibration now also checks goal fit: one on-goal idea must get fit ≥ 3 and two good off-goal ideas fit ≤ 2. Run `npm run calibrate -- --model claudecode:sonnet`.
 - **Providers tested live:** OpenRouter, OpenAI and Ollama (generation and model listing). Not yet tested against the live services: Azure / Microsoft Foundry, MLX, LM Studio, and Anthropic direct (only against a fake server). GitHub Models was removed: GitHub retired it on 30 July 2026 (every endpoint now answers a bare `200 OK`). Use the Test button in Settings.

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clampScore, fitness, medal, medalFromSum, scoreSum } from '../public/js/score.js';
-import { breeders, evolutionStats, expandedIds, hiddenWeak, kinPairs, nextMove, overused, pairKey, similarity, stagnation, usedPairs, wordSet } from '../public/js/evolve.js';
+import { clampScore, fitness, medal, medalFromSum, onGoal, scoreSum } from '../public/js/score.js';
+import { breeders, evolutionStats, expandedIds, hiddenWeak, kinPairs, nextMove, overused, pairKey, population, rootsOf, similarity, stagnation, usedPairs, wordSet } from '../public/js/evolve.js';
 
 const idea = (id: number, sum: number | null, extra: any = {}) => {
   const base: any = { id, kind: 'expand', generation: 1, medalOverride: null, ...extra };
@@ -211,4 +211,35 @@ test('overused: forms of one word count together', () => {
   assert.ok(stuck.some((w: string) => w.startsWith('sold')), `solder family: ${stuck}`);
   assert.ok(stuck.some((w: string) => w.startsWith('term')), `heat family: ${stuck}`);
   assert.ok(!stuck.includes('horta'), 'one idea is not a rut');
+});
+
+test('goal fit: below 3 no medal and no breeding; a seed or a hand-set medal stays', () => {
+  assert.equal(onGoal(idea(1, 13)), true, 'judged before fit existed');
+  assert.equal(onGoal(idea(1, 13, { fit: 3 })), true);
+  assert.equal(medal(idea(1, 13, { fit: 2 })), 0);
+  assert.equal(medal(idea(1, 13, { fit: 2, medalOverride: 2 })), 2, 'the hand-set medal wins');
+  assert.equal(medal(idea(1, null, { fit: 1 })), null, 'not judged is not "no medal"');
+  const ideas = [idea(1, 9, { kind: 'seed', fit: 2 }), idea(2, 13, { fit: 2 }), idea(3, 9, { fit: 4 }), idea(4, 8, { fit: 1, medalOverride: 1 })];
+  assert.deepEqual(population(ideas).map((i: any) => i.id), [1, 3, 4]);
+  for (let s = 0; s < 100; s++) {
+    const m = nextMove(ideas, [], { rng: rngFrom(s), mutationRate: 0 });
+    if (m?.type === 'combine') assert.ok(m.a.id !== 2 && m.b.id !== 2, 'the off-goal gold was bred');
+    if (m?.type === 'expand') assert.notEqual(m.idea.id, 2);
+  }
+});
+
+test('stagnation: an off-goal idea is an attempt that did not help, never the best', () => {
+  const ideas = [idea(1, 9, { kind: 'seed', fit: 5 }), ...Array.from({ length: 8 }, (_, n) => idea(n + 2, 14, { fit: 1 }))];
+  assert.deepEqual(stagnation(ideas), { state: 'stalled', since: 8, seeds: 0, bestId: 1, lastSeedId: null });
+  const allOff = Array.from({ length: 8 }, (_, n) => idea(n + 1, 12, { fit: 1, kind: n ? 'expand' : 'seed' }));
+  assert.equal(stagnation(allOff).state, 'growing', 'seven non-seed attempts');
+  assert.equal(stagnation([...allOff, idea(9, 12, { fit: 1 })]).state, 'stalled');
+});
+
+test('rootsOf: the seeds a line started from', () => {
+  // 1 → 2 → 4; 3 → 4 (a combination); 5 alone.
+  const edges = [{ from: 1, to: 2 }, { from: 2, to: 4 }, { from: 3, to: 4 }];
+  assert.deepEqual(rootsOf([4], edges), [1, 3]);
+  assert.deepEqual(rootsOf([2], edges), [1]);
+  assert.deepEqual(rootsOf([5], edges), [5]);
 });

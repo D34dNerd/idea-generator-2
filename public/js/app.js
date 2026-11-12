@@ -5,7 +5,7 @@ import { $, h, clear, toast, debounce } from './dom.js';
 import { t, getLang, getLocale, setLang, nextLang, langLabel, LANGS, applyI18n, errorText } from './i18n.js';
 import { Graph, KIND_COLORS } from './graph.js';
 import { loadSettings, saveSettings, pushSettings, newBoardConfig, ROLES, PROVIDER_IDS, providersInUse, DEFAULTS } from './settings.js';
-import { medal, scoreSum, fitness, CRITERIA } from './score.js';
+import { medal, scoreSum, fitness, onGoal, CRITERIA } from './score.js';
 import { evolutionStats, hiddenWeak } from './evolve.js';
 import { openDashboard } from './dashboard.js';
 import { openReport } from './report.js';
@@ -390,9 +390,10 @@ function scoreBlock(idea) {
       sum != null ? h('span', { class: 'big' }, `${sum}`, h('small', {}, '/15')) : null,
       m ? h('span', { class: `medal m${m}` }, MEDAL_ICON[m]) : null,
       idea.medalOverride != null ? h('span', { class: 'muted' }, `(${t('medal')}: ${MEDAL_ICON[idea.medalOverride]})`) : null,
+      sum != null && !onGoal(idea) ? h('span', { class: 'badge warn', title: t('offGoalNote') }, t('offGoal')) : null,
     ),
     sum != null
-      ? CRITERIA.map((c) =>
+      ? [...CRITERIA, ...(Number.isInteger(idea.fit) ? ['fit'] : [])].map((c) =>
           h('div', { class: 'meter-row' },
             h('span', { class: 'meter-label' }, t(c)),
             h('span', { class: 'meter', role: 'img', 'aria-label': `${t(c)} ${idea[c]}/5` },
