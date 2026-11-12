@@ -5,8 +5,9 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 ## Commands
 
 - `npm start` – server on http://localhost:8300 (`PORT`, `HOST`, `DB_FILE` override)
-- `npm test` – 83 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
-- `npm run calibrate [-- --model provider:model]` – real judge against weak and strong reference ideas. It costs money. **Re-run it whenever the judge's prompt, schema or model changes.**
+- `npm test` – 84 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
+- `npm run calibrate [-- --model provider:model]` – real judge against weak and strong reference ideas, single and in mixed batches of three, plus goal fit. It costs money. **Re-run it whenever the judge's prompt, schema or model changes.**
+- `npm run benchmark -- --gen agy:<model> --judge claudecode:sonnet [--steps 20] [--label "…"]` – a fixed reference board (same goal and seed) run for N autopilot steps with real models. Prints mean per generation, medals, goal-fit share and diversity, appends to `data/benchmarks.jsonl` with the commit, and compares with the last run on the same goal. **Run it before and after any change to prompts or evolution**: a change that does not move these numbers did not help.
 
 ## Layout
 
@@ -34,6 +35,7 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 - **The medal comes from code, not the model:** a sum of three 1–5 scores, bronze from 9, silver from 11, gold from 13 (`score.js`). Left uncalibrated, an LLM jury gave 3/3 to the bare word "fire"; the calibration test keeps that from happening here.
 - **Goal fit gates the medal.** The judge also scores `fit` 1–5 (how directly the idea serves the board's goal; with no goal, the board's first seed stands in). Below 3 (`FIT_MIN`, `onGoal` in `score.js`) an idea gets no medal and is left out of `population`, so it is never bred; seeds and hand-set medals are exempt. It does not change the 3–15 sum or the thresholds. A model that leaves `fit` out gives `null`, which counts as on the goal. Stagnation counts off-goal ideas as attempts but never as the best.
 - **Every generator sees where its line started.** `juryNotes(board, ideas, parents)` adds the root seeds of the parents' lineage (`rootsOf`) with the jury's verdict on each; off-goal verdicts join the rejections. Without an anchor, a board meant for AR assembly guides reached bread in ten generations of small, well-scored steps.
+- **The jury judges in batches of up to three** (`judgeMany` in `llm.ts`, `judgeBatch` in `engine.ts`): a CLI call costs a process start, so this is most of the autopilot's speed. Each item is judged "as if it were the only one"; calibration checks that mixed batches score like single calls. The queue and `autoStep` both batch per board. A failed call fails the batch once (one backoff, not three); a verdict the model left out is judged alone.
 - **Never put integer `minimum`/`maximum` in a JSON schema.** Anthropic rejects them. Put the range in the description and clamp in code.
 - **Anthropic native: send no `temperature`.** API version 2026-10-21 rejects it. Use effort `low`. The SDK sends the key as a Bearer token.
 - **OpenRouter: send `reasoning:{enabled:false}`** and retry without it on a 400 that mentions reasoning (some models insist on reasoning).

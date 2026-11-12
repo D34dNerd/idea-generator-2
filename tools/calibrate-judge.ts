@@ -1,5 +1,5 @@
 // Calibrate the judge against known-weak and known-strong ideas, with the
-// real model. Costs money (about 22 judge calls), so it is not part of
+// real model. Costs money (about 22 single judge calls, 3 fit calls and 6 batched calls), so it is not part of
 // `npm test`. Any provider works; keys come from the environment:
 //   npm run calibrate
 //   npm run calibrate -- --model anthropic:claude-haiku-5-5
@@ -106,7 +106,24 @@ console.log(`\nweak mean ${mean(weak).toFixed(1)}, max ${weakMax} · strong mean
 console.log(`strong ideas reaching gold: ${strongGold} of ${strong.length * RUNS} · largest run-to-run spread: ${spread}`);
 console.log(`cost: $${cost.toFixed(4)}`);
 
+// The autopilot judges up to three ideas per call. Mixed batches (weak next to strong) must
+// score like single calls: no ranking within the batch, no pulling toward the middle.
+const mixed = WEAK.map((t, n) => [t, STRONG[n % STRONG.length]]).flat().map((text) => ({ text, weak: WEAK.includes(text) }));
+const batched: { weak: boolean; sum: number }[] = [];
+for (let n = 0; n < mixed.length; n += 3) {
+  const chunk = mixed.slice(n, n + 3);
+  const { judgements, costUsd } = await llm.judgeMany({ model, board, lang: 'sv', items: chunk.map((c) => ({ idea: asIdea(c.text) })) });
+  cost += costUsd;
+  judgements.forEach((j, k) => j && batched.push({ weak: chunk[k].weak, sum: j.originality + j.feasibility + j.impact }));
+}
+const bMean = (weak: boolean) => { const xs = batched.filter((b) => b.weak === weak).map((b) => b.sum); return xs.reduce((a, b) => a + b, 0) / (xs.length || 1); };
+const bWeakMax = Math.max(0, ...batched.filter((b) => b.weak).map((b) => b.sum));
+console.log(`BATCHES of 3 (weak and strong mixed): weak mean ${bMean(true).toFixed(1)}, max ${bWeakMax} · strong mean ${bMean(false).toFixed(1)} · ${batched.length} of ${mixed.length} verdicts returned · total cost $${cost.toFixed(4)}`);
+
 const failures = [];
+if (batched.length < mixed.length) failures.push(`batched judging returned ${batched.length} of ${mixed.length} verdicts`);
+if (bWeakMax >= 9) failures.push(`in a batch, a weak idea reached a medal (sum ${bWeakMax})`);
+if (bMean(false) - bMean(true) < 3) failures.push(`in batches, strong and weak are only ${(bMean(false) - bMean(true)).toFixed(1)} apart`);
 if (weakMax >= 9) failures.push(`a weak idea reached a medal (sum ${weakMax} ≥ 9)`);
 if (gap < 3) failures.push(`strong and weak are only ${gap.toFixed(1)} apart (need ≥ 3)`);
 if (on.some((r) => (r.fit ?? 0) < 3)) failures.push('an idea squarely on the goal got goal fit under 3');

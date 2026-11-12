@@ -6,7 +6,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import type { Repo, Idea, Board, Lead } from './db.ts';
-import { makeLLM, type JuryNotes, type Lang, type Verdict } from './llm.ts';
+import { makeLLM, type Judgement, type JuryNotes, type Lang, type Verdict } from './llm.ts';
 import { asUrl, fetchPage as realFetchPage } from './extract.ts';
 import { fetchPapers as realFetchPapers, researchLeads, xLeads } from './leads.ts';
 import { writeBrief, writeProject } from './project.ts';
@@ -218,6 +218,43 @@ export function createEngine(deps: Deps) {
           guidance: board.config.judgeGuidance, vocabulary: repo.keywordVocabulary(), similar: similarTo(idea), anchor: anchorFor(board, idea),
         }),
       );
+      return await finishJudgement(board, idea, judgement);
+    } finally {
+      setJudging(board.id, [idea.id], false);
+    }
+  }
+
+  /** Ideas judged in one call, at most this many: a CLI call costs a process start, so a batch is most of the speed. */
+  const BATCH = 3;
+
+  /**
+   * Judge several ideas of one board in a single call. The call failing (quota, timeout) fails
+   * them all, so the autopilot backs off once instead of three times; a verdict the model left
+   * out is judged on its own afterwards.
+   */
+  async function judgeBatch(ids: number[]): Promise<PromiseSettledResult<unknown>[]> {
+    if (ids.length <= 1) return Promise.allSettled(ids.map((id) => judge(id)));
+    const ideas = ids.map(mustIdea);
+    const board = mustBoard(ideas[0].boardId);
+    if (ideas.some((i) => i.boardId !== board.id)) throw new AppError(400, 'bad_batch', 'A batch is judged on one board');
+    setJudging(board.id, ids, true);
+    let judgements: (Judgement | null)[];
+    try {
+      ({ judgements } = await call(board.id, () =>
+        llm.judgeMany({
+          model: modelFor(board, 'judge'), board, lang: board.config.lang, guidance: board.config.judgeGuidance, vocabulary: repo.keywordVocabulary(),
+          items: ideas.map((idea) => ({ idea, similar: similarTo(idea), anchor: anchorFor(board, idea) })),
+        }),
+      ));
+    } finally {
+      setJudging(board.id, ids, false);
+    }
+    return Promise.allSettled(ideas.map((idea, n) => (judgements[n] ? finishJudgement(board, mustIdea(idea.id), judgements[n]!) : judge(idea.id))));
+  }
+
+  /** Save a verdict and do what follows from it: keywords, a project for gold, a vault note. */
+  async function finishJudgement(board: Board, idea: Idea, judgement: Judgement) {
+    {
       repo.saveJudgement(idea.id, judgement);
       const out: { idea: Idea; project?: string; projectError?: string; note?: string; noteError?: string } = { idea: repo.setKeywords(idea.id, judgement.keywords)! };
       // The judge itself turns gold into a Claude Code project, if the board allows it.
@@ -243,8 +280,6 @@ export function createEngine(deps: Deps) {
       }
       emitIdeas(board.id, [out.idea]);
       return out;
-    } finally {
-      setJudging(board.id, [idea.id], false);
     }
   }
 
@@ -254,13 +289,22 @@ export function createEngine(deps: Deps) {
   let idleWaiters: (() => void)[] = [];
   function pump() {
     while (active < 3 && queue.length) {
-      const id = queue.shift()!;
+      // Up to BATCH queued ideas of the same board go in one call.
+      const first = queue.shift()!;
+      const boardId = repo.getIdea(first)?.boardId;
+      const ids = [first];
+      for (let n = 0; n < queue.length && ids.length < BATCH; ) {
+        if (boardId != null && repo.getIdea(queue[n])?.boardId === boardId) ids.push(...queue.splice(n, 1));
+        else n++;
+      }
       active++;
-      judge(id)
-        .catch((e: any) => {
-          const boardId = repo.getIdea(id)?.boardId;
-          if (boardId) bus.emit(boardId, { type: 'error', code: e?.code ?? 'judge_failed', message: e?.message ?? String(e), ideaId: id });
-        })
+      const report = (id: number, e: any) => {
+        const b = repo.getIdea(id)?.boardId;
+        if (b) bus.emit(b, { type: 'error', code: e?.code ?? 'judge_failed', message: e?.message ?? String(e), ideaId: id });
+      };
+      judgeBatch(ids)
+        .then((rs) => rs.forEach((r, n) => r.status === 'rejected' && report(ids[n], r.reason)))
+        .catch((e: any) => ids.forEach((id) => report(id, e)))
         .finally(() => {
           active--;
           pump();
@@ -585,7 +629,7 @@ export function createEngine(deps: Deps) {
       const ideas = repo.listIdeas(boardId);
       if (!ideas.length) return { did: 'idle', reason: 'empty' };
       const judgeAll = async (ids: number[]) => {
-        const results = await Promise.allSettled(ids.map((id) => judge(id)));
+        const results = await judgeBatch(ids);
         const failed = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
         if (failed && results.every((r) => r.status === 'rejected')) throw failed.reason;
       };
