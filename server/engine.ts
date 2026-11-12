@@ -542,7 +542,15 @@ export function createEngine(deps: Deps) {
         await judgeAll(unjudged.map((i) => i.id));
         return { did: 'judge', ids: unjudged.map((i) => i.id) };
       }
-      const move = nextMove(ideas, repo.listEdges(boardId), { busy: judging, inFlight: barren.pairs, noExpand: barren.expand });
+      const edges = repo.listEdges(boardId);
+      let move = nextMove(ideas, edges, { busy: judging, inFlight: barren.pairs, noExpand: barren.expand });
+      // A move that once gave only repeats may work on another try (the model samples). Rather
+      // than stall a small board for good, forget this board's barren moves and try again.
+      if (!move && (barren.expand.size || barren.pairs.size)) {
+        for (const i of ideas) barren.expand.delete(i.id);
+        for (const a of ideas) for (const c of ideas) barren.pairs.delete(pairKey(a.id, c.id));
+        move = nextMove(ideas, edges, { busy: judging });
+      }
       if (!move) return { did: 'idle', reason: 'nothing_to_do' };
       try {
         if (move.type === 'expand') {

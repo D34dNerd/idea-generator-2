@@ -67,7 +67,11 @@ export type AutopilotStatus = {
   spentToday?: number;
 };
 
-type BoardState = { busy: boolean; steps: number[]; lastAt: number; errors: number; lastErrorAt: number; status: AutopilotStatus; sent: string };
+type BoardState = {
+  busy: boolean; steps: number[]; lastAt: number; errors: number; lastErrorAt: number; status: AutopilotStatus; sent: string;
+  /** The last failure, kept while backing off so the reason stays on screen. */
+  lastError?: { code: string; message: string };
+};
 
 export function createAutopilot(deps: { repo: Repo; engine: Engine; settings: () => AppSettings; now?: () => number; tickMs?: number }) {
   const { repo, engine } = deps;
@@ -107,7 +111,9 @@ export function createAutopilot(deps: { repo: Repo; engine: Engine; settings: ()
       if (!d.ok) {
         // Keep the last result visible while merely pacing.
         if (d.reason === 'pace' && (s.status.state === 'idle' || s.status.state === 'error')) continue;
-        publish(b.id, s, { state: d.reason, until: d.until, last: s.status.last, ...counts });
+        // While backing off, keep showing why: the error itself only lasts one tick.
+        const why = d.reason === 'backoff' && s.lastError ? s.lastError : {};
+        publish(b.id, s, { state: d.reason, until: d.until, last: s.status.last, ...why, ...counts });
         continue;
       }
       s.busy = true;
@@ -119,6 +125,7 @@ export function createAutopilot(deps: { repo: Repo; engine: Engine; settings: ()
           if (r.did !== 'idle') st.steps.push(now());
           st.lastAt = now();
           st.errors = 0;
+          st.lastError = undefined;
           publish(b.id, st, {
             state: r.did === 'idle' ? 'idle' : 'pace', until: now() + b.config.autopilotSeconds * 1000,
             last: r.did === 'idle' ? r.reason : r.did, stepsLastHour: st.steps.length, spentToday: counts.spentToday,
@@ -127,7 +134,10 @@ export function createAutopilot(deps: { repo: Repo; engine: Engine; settings: ()
         .catch((e: any) => {
           st.errors++;
           st.lastErrorAt = st.lastAt = now();
-          publish(b.id, st, { state: 'error', code: e?.code ?? 'error', message: e?.message ?? String(e), until: now() + backoffMs(st.errors), ...counts });
+          st.lastError = { code: e?.code ?? 'error', message: e?.message ?? String(e) };
+          // The browser may be closed; the terminal is the one place this is always seen.
+          console.error(`[autopilot] "${b.title}": ${st.lastError.code}: ${st.lastError.message}`);
+          publish(b.id, st, { state: 'error', ...st.lastError, until: now() + backoffMs(st.errors), ...counts });
         })
         .finally(() => {
           st.busy = false;

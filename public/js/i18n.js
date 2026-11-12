@@ -62,7 +62,7 @@ const DICT = {
     // autopilot
     ap_manual: 'Manuell', ap_running: 'Arbetar …', ap_pace: 'Nästa steg om {s}', ap_hourly: 'Timgräns nådd · fortsätter {time}',
     ap_board_budget: 'Dagsbudgeten är slut · fortsätter i morgon', ap_global_budget: 'Global dagsbudget slut · fortsätter i morgon',
-    ap_backoff: 'Fel · försöker igen om {s}', ap_error: 'Fel: {m}', ap_idle: 'Väntar', ap_idle_empty: 'Väntar på ett frö',
+    ap_backoff: 'Fel · försöker igen om {s} · {m}', ap_error: 'Fel: {m}', ap_idle: 'Väntar', ap_idle_empty: 'Väntar på ett frö',
     ap_idle_nothing: 'Inget mer att göra just nu',
     apMeta: '{n} steg senaste timmen · ${usd} i dag',
     // board settings
@@ -171,7 +171,7 @@ const DICT = {
     dragLead: 'Drag onto the board or click + Seed',
     ap_manual: 'Manual', ap_running: 'Working …', ap_pace: 'Next step in {s}', ap_hourly: 'Hourly limit reached · resumes {time}',
     ap_board_budget: 'Daily budget spent · resumes tomorrow', ap_global_budget: 'Global daily budget spent · resumes tomorrow',
-    ap_backoff: 'Error · retrying in {s}', ap_error: 'Error: {m}', ap_idle: 'Waiting', ap_idle_empty: 'Waiting for a seed',
+    ap_backoff: 'Error · retrying in {s} · {m}', ap_error: 'Error: {m}', ap_idle: 'Waiting', ap_idle_empty: 'Waiting for a seed',
     ap_idle_nothing: 'Nothing more to do right now',
     apMeta: '{n} steps in the last hour · ${usd} today',
     general: 'General', language: 'Language (fallback for generated text)', flow: 'Creation flow', flowName: 'Flow name',
@@ -274,7 +274,7 @@ const DICT = {
     dragLead: 'Arraste para o quadro ou clique em + Semente',
     ap_manual: 'Manual', ap_running: 'Trabalhando …', ap_pace: 'Próximo passo em {s}', ap_hourly: 'Limite por hora atingido · volta às {time}',
     ap_board_budget: 'Orçamento do dia esgotado · volta amanhã', ap_global_budget: 'Orçamento global do dia esgotado · volta amanhã',
-    ap_backoff: 'Erro · tentando de novo em {s}', ap_error: 'Erro: {m}', ap_idle: 'Esperando', ap_idle_empty: 'Esperando uma semente',
+    ap_backoff: 'Erro · tentando de novo em {s} · {m}', ap_error: 'Erro: {m}', ap_idle: 'Esperando', ap_idle_empty: 'Esperando uma semente',
     ap_idle_nothing: 'Nada mais a fazer agora',
     apMeta: '{n} passos na última hora · ${usd} hoje',
     general: 'Geral', language: 'Idioma (reserva para texto gerado)', flow: 'Fluxo de criação', flowName: 'Nome do fluxo',
