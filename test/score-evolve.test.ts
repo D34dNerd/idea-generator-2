@@ -199,3 +199,16 @@ test('stagnation: eight ideas without beating the best call for a fresh seed; tw
   assert.equal(stagnation(two).state, 'exhausted');
   assert.equal(stagnation([...two, idea(28, 14)]).state, 'growing', 'until something beats the best');
 });
+
+test('overused: forms of one word count together', () => {
+  // Half the board on solder heat, never twice in the same form: as on a real board that went eleven generations without a medal.
+  const forms = ['Roteador de solda térmico', 'Soldagem com cadência térmica', 'Soldar placas com rota térmica', 'Partitura para soldagem térmica', 'Escape térmico da solda'];
+  const ideas = [
+    ...forms.map((t, n) => text(n + 1, t)),
+    ...['Horta comunitária', 'Jogo de ritmo no navegador', 'Sintetizador visual', 'Mapa de bairros', 'Leitor de partituras'].map((t, n) => text(n + 10, t)),
+  ];
+  const stuck = overused(ideas, 'Projetos que IAs constroem');
+  assert.ok(stuck.some((w: string) => w.startsWith('sold')), `solder family: ${stuck}`);
+  assert.ok(stuck.some((w: string) => w.startsWith('term')), `heat family: ${stuck}`);
+  assert.ok(!stuck.includes('horta'), 'one idea is not a rut');
+});

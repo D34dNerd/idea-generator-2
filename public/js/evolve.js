@@ -42,20 +42,38 @@ const GLUE = new Set(
 );
 
 /**
- * Words the board is stuck on: those in at least `share` of its ideas, most common
- * first, leaving out the goal's own words (the goal is supposed to be everywhere).
- * Empty until the board has `min` ideas.
+ * Words of one family share a stem here: the first five letters. Crude, but it is what lets
+ * "solda", "soldagem" and "soldar", or "térmico" and "térmicas", count as one rut. Measured on a
+ * board where half the ideas were about solder heat, no single form reached the threshold.
+ */
+const stem = (w) => (w.length > 5 ? w.slice(0, 5) : w);
+
+/**
+ * Words the board is stuck on: word families in at least `share` of its ideas, most common
+ * first, each shown in its most frequent form, leaving out the goal's own words (the goal is
+ * supposed to be everywhere). Empty until the board has `min` ideas.
  */
 export function overused(ideas, goal = '', { share = 0.3, min = 8, top = 10 } = {}) {
   if (ideas.length < min) return [];
-  const inGoal = new Set([...wordSet({ title: goal }), ...GLUE]);
-  const count = new Map();
-  for (const i of ideas) for (const w of wordSet(i)) if (!inGoal.has(w)) count.set(w, (count.get(w) ?? 0) + 1);
+  const skip = new Set([...wordSet({ title: goal }), ...GLUE].map(stem));
+  const count = new Map(); // stem → ideas that use it
+  const forms = new Map(); // stem → form → uses
+  for (const i of ideas) {
+    const seen = new Set();
+    for (const w of wordSet(i)) {
+      const k = stem(w);
+      if (skip.has(k)) continue;
+      if (!forms.has(k)) forms.set(k, new Map());
+      forms.get(k).set(w, (forms.get(k).get(w) ?? 0) + 1);
+      if (!seen.has(k)) { seen.add(k); count.set(k, (count.get(k) ?? 0) + 1); }
+    }
+  }
+  const shown = (k) => [...forms.get(k)].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))[0][0];
   return [...count]
     .filter(([, n]) => n / ideas.length >= share)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, top)
-    .map(([w]) => w);
+    .map(([k]) => shown(k));
 }
 
 /**

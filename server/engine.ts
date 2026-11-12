@@ -110,7 +110,7 @@ export function createEngine(deps: Deps) {
       const reason = (ideas[n].reason ?? '').trim().slice(0, 240);
       if (sum != null && sum < 9 && reason && !rejections.includes(reason)) rejections.push(reason);
     }
-    return { guidance: board.config.judgeGuidance, rejections, stuck: overused(ideas, board.goal) };
+    return { guidance: board.config.judgeGuidance, rejections, stuck: overused(ideas, board.goal), gaps: (board.summary?.gaps ?? []).slice(0, 4) };
   }
 
   /** A rewording of something already on the board (or of an earlier idea in the same batch)? */
@@ -334,7 +334,7 @@ export function createEngine(deps: Deps) {
   /**
    * New material for a stuck board. An unused lead from the board's scouts comes first: it is
    * grounded in something real and costs nothing. Otherwise the model writes a seed from the
-   * board's best ideas, the summary's gaps and the jury's objections, pointed somewhere new.
+   * board's best ideas and the jury notes (with the summary's gaps), pointed somewhere new.
    */
   async function doFresh(board: Board, ideas: Idea[], since: number) {
     const lead = repo.listLeads(board.id).find((l) => l.ideaId == null && !isRepeat({ title: l.title, pitch: l.summary }, ideas));
@@ -347,7 +347,7 @@ export function createEngine(deps: Deps) {
     const { idea: drafted } = await call(board.id, () =>
       llm.fresh({
         model: modelFor(board, 'expand'), flow: board.config.flow, board, lang: board.config.lang,
-        existingTitles: ideas.map((i) => i.title), best, since, gaps: board.summary?.gaps ?? [], jury: juryNotes(board, ideas),
+        existingTitles: ideas.map((i) => i.title), best, since, jury: juryNotes(board, ideas),
       }),
     );
     if (isRepeat(drafted, ideas)) throw new AppError(409, 'repeat', 'The model only repeated an idea that is already on the board');

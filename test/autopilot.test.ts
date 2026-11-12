@@ -173,3 +173,21 @@ test('autoStep on a stuck board: a fresh seed (a scout lead first), expanded nex
   for (let k = 0; k < 8; k++) add(`Fortfarande platt ${k}`, 'combine', 2);
   assert.deepEqual(await engine.autoStep(board.id), { did: 'idle', reason: 'exhausted' });
 });
+
+test('the summary\'s gaps reach the generators', async () => {
+  const repo = openDb(':memory:');
+  const prompts: string[] = [];
+  const chat = async (r: ChatRequest) => {
+    prompts.push(r.user);
+    return { value: { candidates: [], ideas: [{ title: 'Sintetizador no navegador', pitch: 'p' }] }, costUsd: 0 };
+  };
+  const engine = createEngine({ repo, chat, settings: () => DEFAULT_APP_SETTINGS, gitInit: false });
+  const board = repo.createBoard({ title: 'B' });
+  const seed = repo.insertIdea({ boardId: board.id, title: 'Solda térmica', pitch: '', kind: 'seed', x: 0, y: 0, generation: 0 });
+  repo.setSummary(board.id, {
+    headline: 'h', themes: [], strongest: [], nextSteps: [], ideaCount: 1, lang: 'pt', createdAt: '2026-11-12',
+    gaps: ['Aplicações 100% digitais que as IAs constroem sozinhas'],
+  });
+  await engine.expand(seed.id);
+  assert.match(prompts[0], /gaps toward the goal:\n- Aplicações 100% digitais/);
+});
