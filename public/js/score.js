@@ -25,6 +25,17 @@ export function scoreSum(idea) {
   return idea.originality + idea.feasibility + idea.impact;
 }
 
+// Goal fit, 1–5: how directly an idea serves the board's goal. Below FIT_MIN an idea
+// is off the board's subject: however well it scores, it earns no medal and does not
+// breed. A board meant for AR assembly guides once drifted to bread in ten generations,
+// each step a small, well-scored move away from the last.
+export const FIT_MIN = 3;
+
+/** On the board's subject? Ideas judged before fit existed (null) count as on it. */
+export function onGoal(idea) {
+  return !Number.isInteger(idea?.fit) || idea.fit >= FIT_MIN;
+}
+
 export function medalFromSum(sum) {
   if (sum == null) return null;
   if (sum >= MEDAL_MIN_SUM[3]) return 3;
@@ -33,10 +44,11 @@ export function medalFromSum(sum) {
   return 0;
 }
 
-/** Medal shown for an idea: a hand-set medal wins over the judge. null = not judged yet. */
+/** Medal shown for an idea: a hand-set medal wins over the judge. null = not judged yet. Off the goal: no medal. */
 export function medal(idea) {
   if (Number.isInteger(idea?.medalOverride)) return idea.medalOverride;
-  return medalFromSum(scoreSum(idea));
+  const m = medalFromSum(scoreSum(idea));
+  return m != null && !onGoal(idea) ? 0 : m;
 }
 
 // A hand-set medal counts as a typical sum for that medal when breeding.

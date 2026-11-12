@@ -18,7 +18,7 @@ const IDIOM: Record<Lang, string> = { sv: ' (idiomatic Swedish)', en: '', pt: ' 
 type Pitch = { title: string; pitch: string };
 type Flow = { system: string; expand: string; combine: string };
 type BoardCtx = { goal: string };
-export type Judgement = { originality: number; feasibility: number; impact: number; reason: string; keywords: string[] };
+export type Judgement = { originality: number; feasibility: number; impact: number; fit: number | null; reason: string; keywords: string[] };
 
 /** One canonical form so "Public Spaces" and "public space" count as one trend. */
 export function normalizeKeywords(raw: unknown): string[] {
@@ -74,6 +74,11 @@ const JUDGE_SCHEMA = {
       description:
         'Two sentences, at most 45 words, in the language of the idea. First the main flaw, stated plainly. Then the one concrete change that would raise the score most. The next version of the idea is written from this.',
     },
+    fit: {
+      type: 'integer',
+      description:
+        "Integer 1–5: how directly the idea serves the board's goal. 5 = squarely what the goal asks for; 3 = serves it, with a detour; 2 = only loosely related; 1 = about something else.",
+    },
     originality: { type: 'integer', description: 'Integer 1–5.' },
     feasibility: { type: 'integer', description: 'Integer 1–5.' },
     impact: { type: 'integer', description: 'Integer 1–5.' },
@@ -83,7 +88,7 @@ const JUDGE_SCHEMA = {
       items: { type: 'string' },
     },
   },
-  required: ['reason', 'originality', 'feasibility', 'impact', 'keywords'],
+  required: ['reason', 'fit', 'originality', 'feasibility', 'impact', 'keywords'],
   additionalProperties: false,
 };
 
@@ -116,13 +121,19 @@ function context(board: BoardCtx, existingTitles: string[]) {
 const fmtIdea = (i: Pitch) => (i.pitch ? `${i.title}: ${i.pitch}` : i.title);
 
 /** What the jury said about an idea, for the model that will build on it. */
-export type Verdict = { originality: number; feasibility: number; impact: number; reason: string };
+export type Verdict = { originality: number; feasibility: number; impact: number; fit?: number | null; reason: string };
 /** What a generator is told about the jury: the board's own instructions, recent rejections, worn-out words. */
 /** gaps: what the board's last summary said is missing toward the goal. */
-export type JuryNotes = { guidance?: string; rejections?: string[]; stuck?: string[]; gaps?: string[] };
+/** origin: the seeds this line of ideas started from, with the jury's verdict on each: the anchor against drift. */
+export type JuryNotes = {
+  guidance?: string; rejections?: string[]; stuck?: string[]; gaps?: string[];
+  origin?: { title: string; pitch: string; verdict: Verdict | null }[];
+};
 
 const fmtVerdict = (v: Verdict) =>
-  `originality ${v.originality}/5, feasibility ${v.feasibility}/5, impact ${v.impact}/5 (${v.originality + v.feasibility + v.impact}/15). ${v.reason}`.trim();
+  `originality ${v.originality}/5, feasibility ${v.feasibility}/5, impact ${v.impact}/5 (${v.originality + v.feasibility + v.impact}/15)${
+    Number.isInteger(v.fit) ? `, goal fit ${v.fit}/5${v.fit! < 3 ? ' (off the goal: no medal)' : ''}` : ''
+  }. ${v.reason}`.trim();
 
 /**
  * The generator used to write blind: it never saw the scale, the board's jury
@@ -135,6 +146,12 @@ function juryBrief(n: JuryNotes = {}) {
       'It gives 1–2 to bare topics, to anything vague about what actually happens, and to an idea that rewords one already on the board. ' +
       'It rewards a specific, non-obvious mechanism that could be piloted within months and that matters for the goal.',
   ];
+  if (n.origin?.length)
+    parts.push(
+      `Where this line of ideas started:\n${n.origin.map((o) => `- ${fmtIdea(o)}${o.verdict ? `\n  Jury: ${fmtVerdict(o.verdict)}` : ''}`).join('\n')}\n` +
+        "Stay in service of what that starting idea and the board's goal are after, and build on the jury's advice for it. " +
+        'Each generation tends to drift a small step away from its parent; ten such steps end somewhere nobody wanted. The jury gives no medal to an idea off the goal.',
+    );
   const guidance = (n.guidance ?? '').trim();
   if (guidance) parts.push(`The board's own instructions to the jury:\n${guidance}`);
   if (n.rejections?.length)
@@ -175,7 +192,13 @@ Rules:
 - Most ideas land around 2–3 per criterion. Reserve 5 for the exceptional; fewer than one idea in ten should reach a total of 13.
 - Judge the idea as written, not the best idea it could become.
 - If similar ideas already on the board are listed, judge originality against them: an idea that rewords one of them, with no new mechanism, scores originality 1.
-- If the board has a goal, judge against it: impact means impact on that goal, and an idea that does not serve the goal scores at most 2 on impact however good it is otherwise. Say in the reason how well it fits the goal.`;
+- If the board has a goal, judge against it: impact means impact on that goal, and an idea that does not serve the goal scores at most 2 on impact however good it is otherwise. Say in the reason how well it fits the goal.
+
+GOAL FIT (scored separately, 1–5)
+How directly the idea serves the board's goal, read literally: the kind of thing the goal asks for, for the people it names, in the medium it names.
+5 = squarely what the goal asks for. 3 = serves the goal, with a detour. 2 = only loosely related. 1 = about something else.
+An idea that is good in itself but about another subject scores fit 1–2. Ideas drift a little each generation; judge where this one has landed, not where its ancestors were.
+Below 3, an idea earns no medal and is not bred, whatever its other scores. If fit is below 3, say in the reason what pulled it off the goal.`;
 
 const list = (description: string) => ({ type: 'array', description, items: { type: 'string' } });
 const SUMMARY_SCHEMA = {
@@ -435,11 +458,16 @@ export function makeLLM(chat: ChatFn) {
 
     /** guidance: the board's own jury instructions, on top of the fixed scale. */
     /** similar: the ideas on the board that read most like this one, so originality is not judged in a vacuum. */
-    async judge(a: { model: string; board: BoardCtx; idea: Pitch; lang: Lang; guidance?: string; vocabulary?: string[]; similar?: Pitch[] }) {
+    /** anchor: the board's first seed, which stands in for the goal when the board has none. */
+    async judge(a: { model: string; board: BoardCtx; idea: Pitch; lang: Lang; guidance?: string; vocabulary?: string[]; similar?: Pitch[]; anchor?: Pitch | null }) {
       const guidance = (a.guidance ?? '').trim();
       const system = guidance ? `${JUDGE_SYSTEM}\n\nAdditional guidance from this board's facilitator:\n${guidance}` : JUDGE_SYSTEM;
       const user = [
-        a.board.goal.trim() ? `The board's goal (the general direction): ${a.board.goal.trim()}` : '',
+        a.board.goal.trim()
+          ? `The board's goal: ${a.board.goal.trim()}`
+          : a.anchor
+            ? `The board has no written goal. It started from this idea, which stands in for the goal when you score fit:\n${fmtIdea(a.anchor)}`
+            : 'The board has no goal: score fit 5.',
         `The idea:\n${fmtIdea(a.idea)}`,
         a.similar?.length ? `Similar ideas already on the board:\n${a.similar.map((i) => `- ${fmtIdea(i)}`).join('\n')}` : '',
         `Write the reason in the language of the idea; if unclear, in ${LANG_NAME[a.lang]}.`,
@@ -460,6 +488,8 @@ export function makeLLM(chat: ChatFn) {
         originality: clampScore(value?.originality),
         feasibility: clampScore(value?.feasibility),
         impact: clampScore(value?.impact),
+        // A model that leaves fit out has not judged it: unknown counts as on the goal, not as 1.
+        fit: !(a.board.goal.trim() || a.anchor) ? 5 : value?.fit == null || value.fit === '' ? null : clampScore(value.fit),
         reason: String(value?.reason ?? '').trim().slice(0, 500),
         keywords: normalizeKeywords(value?.keywords),
       };

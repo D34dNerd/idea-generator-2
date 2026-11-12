@@ -34,6 +34,17 @@ const STRONG = [
   'Agentes de saúde como sensores de dengue: os agentes comunitários fotografam caixas d\'água e calhas nas visitas que já fazem, e o mapa da prefeitura prioriza os quarteirões com mais focos antes da estação chuvosa.',
 ];
 
+// Goal fit: the same board goal, one idea squarely on it and good ideas that drifted off it.
+// A real board meant for AR assembly guides ended, ten generations later, on bread.
+const FIT_GOAL = 'Guias de montagem em realidade aumentada que uma pessoa usa sozinha em casa';
+const ON_GOAL = [
+  'Guia RA que confere cada passo: o celular compara a foto da peça montada com o modelo 3D do manual e só libera o próximo passo quando a peça certa está no lugar, evitando desmontar o móvel inteiro no fim.',
+];
+const OFF_GOAL = [
+  'Cronômetro de corte para pães: a câmera do celular mede quanto a massa volta ao ser pressionada e avisa o momento exato de cortar e levar ao forno.',
+  'Sequenciador térmico para soldagem: um script lê o projeto da placa no KiCad e ordena os pontos de solda para que nenhuma região aqueça duas vezes seguidas.',
+];
+
 const modelArg = process.argv.indexOf('--model');
 const model = modelArg > 0 ? process.argv[modelArg + 1] : DEFAULT_APP_SETTINGS.models.judge;
 const RUNS = 2;
@@ -81,6 +92,16 @@ const gap = mean(strong) - mean(weak);
 const strongGold = strong.flatMap((r) => r.sums).filter((s) => s >= 13).length;
 const spread = Math.max(...[...weak, ...strong].map((r) => Math.max(...r.sums) - Math.min(...r.sums)));
 
+const fitRuns = async (texts: string[]) =>
+  Promise.all(texts.map(async (text) => {
+    const { judgement, costUsd } = await llm.judge({ model, board: { goal: FIT_GOAL }, idea: asIdea(text), lang: 'pt' });
+    cost += costUsd;
+    return { text, fit: judgement.fit, j: judgement };
+  }));
+const [on, off] = await Promise.all([fitRuns(ON_GOAL), fitRuns(OFF_GOAL)]);
+console.log(`GOAL FIT (goal: ${FIT_GOAL})`);
+for (const r of [...on, ...off]) console.log(`  fit ${r.fit ?? '?'}  O${r.j.originality} F${r.j.feasibility} I${r.j.impact}  ${r.text.slice(0, 60)}`);
+
 console.log(`\nweak mean ${mean(weak).toFixed(1)}, max ${weakMax} · strong mean ${mean(strong).toFixed(1)} · gap ${gap.toFixed(1)}`);
 console.log(`strong ideas reaching gold: ${strongGold} of ${strong.length * RUNS} · largest run-to-run spread: ${spread}`);
 console.log(`cost: $${cost.toFixed(4)}`);
@@ -88,8 +109,10 @@ console.log(`cost: $${cost.toFixed(4)}`);
 const failures = [];
 if (weakMax >= 9) failures.push(`a weak idea reached a medal (sum ${weakMax} ≥ 9)`);
 if (gap < 3) failures.push(`strong and weak are only ${gap.toFixed(1)} apart (need ≥ 3)`);
+if (on.some((r) => (r.fit ?? 0) < 3)) failures.push('an idea squarely on the goal got goal fit under 3');
+if (off.some((r) => r.fit == null || r.fit >= 3)) failures.push('an idea off the goal got goal fit 3 or more');
 if (failures.length) {
   console.log(`\nFAIL: ${failures.join('; ')}`);
   process.exit(1);
 }
-console.log('\nPASS: weak ideas earn no medal, and the judge separates weak from strong.');
+console.log('\nPASS: weak ideas earn no medal, the judge separates weak from strong, and it tells on-goal from off-goal.');

@@ -5,7 +5,7 @@
 // crossed. Half the time it "mutates" instead, expanding a strong idea that
 // has not been expanded yet, which brings new material into the pool.
 
-import { fitness, medal } from './score.js';
+import { fitness, medal, onGoal } from './score.js';
 
 export const pairKey = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 
@@ -98,9 +98,12 @@ export function hiddenWeak(ideas, edges) {
   return new Set(ideas.filter((i) => !keep.has(i.id)).map((i) => i.id));
 }
 
-/** Ideas that can breed: judged or hand-medalled. */
+/**
+ * Ideas that can breed: judged or hand-medalled, and on the board's goal. An off-goal
+ * idea bred is how a board drifts; a seed the user planted, or a hand-set medal, stays.
+ */
 export function population(ideas) {
-  return ideas.filter((i) => fitness(i) != null);
+  return ideas.filter((i) => fitness(i) != null && (onGoal(i) || i.kind === 'seed' || Number.isInteger(i.medalOverride)));
 }
 
 /** Pairs that must not be bred again: already combined, or parent and child. */
@@ -251,12 +254,39 @@ export function stagnation(ideas, { after = STALL_AFTER, seeds = FRESH_SEEDS } =
   const ordered = [...ideas].sort((a, b) => a.id - b.id);
   const judged = ordered.filter((i) => fitness(i) != null);
   if (!judged.length) return { state: 'growing', since: 0, seeds: 0, bestId: null, lastSeedId: null };
-  let best = judged[0];
-  for (const i of judged) if (fitness(i) > fitness(best)) best = i;
-  const fresh = ordered.filter((i) => i.id > best.id && i.kind === 'seed');
+  // Off-goal ideas still count as attempts that did not help, but never as the best.
+  let best = null;
+  for (const i of judged) if ((onGoal(i) || Number.isInteger(i.medalOverride)) && (!best || fitness(i) > fitness(best))) best = i;
+  const from = best?.id ?? 0;
+  const fresh = ordered.filter((i) => i.id > from && i.kind === 'seed' && i.id !== ordered[0].id);
   const lastSeedId = fresh.length ? fresh[fresh.length - 1].id : null;
-  const mark = lastSeedId ?? best.id;
+  const mark = lastSeedId ?? from;
   const since = judged.filter((i) => i.id > mark && i.kind !== 'seed').length;
   const state = since < after ? 'growing' : fresh.length >= seeds ? 'exhausted' : 'stalled';
-  return { state, since, seeds: fresh.length, bestId: best.id, lastSeedId };
+  return { state, since, seeds: fresh.length, bestId: best?.id ?? null, lastSeedId };
+}
+
+/**
+ * The ideas a line started from: every ancestor of `ids` (the ids themselves included)
+ * that has no parent of its own, oldest first. Generators are anchored to these, so ten
+ * generations of small steps cannot walk the line off its subject.
+ */
+export function rootsOf(ids, edges) {
+  const parentsOf = new Map();
+  for (const e of edges) {
+    if (!parentsOf.has(e.to)) parentsOf.set(e.to, []);
+    parentsOf.get(e.to).push(e.from);
+  }
+  const seen = new Set();
+  const roots = new Set();
+  const queue = [...ids];
+  while (queue.length) {
+    const id = queue.pop();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const ps = parentsOf.get(id) ?? [];
+    if (!ps.length) roots.add(id);
+    queue.push(...ps);
+  }
+  return [...roots].sort((a, b) => a - b);
 }

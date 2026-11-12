@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS ideas (
   originality INTEGER,
   feasibility INTEGER,
   impact INTEGER,
+  fit INTEGER,
   reason TEXT,
   judged_at TEXT,
   medal_override INTEGER,
@@ -227,6 +228,8 @@ export type Idea = {
   originality: number | null;
   feasibility: number | null;
   impact: number | null;
+  /** How directly the idea serves the board's goal, 1–5 (null: judged before this existed). */
+  fit: number | null;
   reason: string | null;
   judgedAt: string | null;
   medalOverride: number | null;
@@ -277,6 +280,7 @@ const ideaFromRow = (r: any): Idea => ({
   originality: r.originality,
   feasibility: r.feasibility,
   impact: r.impact,
+  fit: r.fit ?? null,
   reason: r.reason,
   judgedAt: r.judged_at,
   medalOverride: r.medal_override,
@@ -332,6 +336,9 @@ export function openDb(file: string) {
   db.exec('PRAGMA foreign_keys = ON;');
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
+  // Columns added after the first release: an older ideas.db gets them on open.
+  const ideaCols = new Set((db.prepare('PRAGMA table_info(ideas)').all() as any[]).map((c) => c.name));
+  if (!ideaCols.has('fit')) db.exec('ALTER TABLE ideas ADD COLUMN fit INTEGER');
 
   if ((db.prepare('SELECT COUNT(*) AS n FROM templates').get() as any).n === 0) {
     const ins = db.prepare('INSERT INTO templates (name, system, expand, combine, sort) VALUES (?, ?, ?, ?, ?)');
@@ -441,10 +448,10 @@ export function openDb(file: string) {
     hasGuest(boardId: number, originIdeaId: number) {
       return !!db.prepare('SELECT 1 FROM ideas WHERE board_id = ? AND (origin_idea_id = ? OR id = ?)').get(boardId, originIdeaId, originIdeaId);
     },
-    saveJudgement(id: number, j: { originality: number; feasibility: number; impact: number; reason: string }) {
+    saveJudgement(id: number, j: { originality: number; feasibility: number; impact: number; fit?: number | null; reason: string }) {
       db.prepare(
-        `UPDATE ideas SET originality = ?, feasibility = ?, impact = ?, reason = ?, judged_at = datetime('now') WHERE id = ?`,
-      ).run(j.originality, j.feasibility, j.impact, j.reason, id);
+        `UPDATE ideas SET originality = ?, feasibility = ?, impact = ?, fit = ?, reason = ?, judged_at = datetime('now') WHERE id = ?`,
+      ).run(j.originality, j.feasibility, j.impact, j.fit ?? null, j.reason, id);
       return repo.getIdea(id);
     },
     setKeywords(id: number, keywords: string[]) {
