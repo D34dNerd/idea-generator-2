@@ -213,3 +213,32 @@ export function evolutionStats(ideas, window = 8) {
     best: bred.length ? Math.max(...bred.map(fitness)) : null,
   };
 }
+
+/** Ideas after the best one that may fail to beat it before the board is called stuck. */
+export const STALL_AFTER = 8;
+/** Fresh seeds planted after the best before the autopilot gives up and says so. */
+export const FRESH_SEEDS = 2;
+
+/**
+ * Has the board stopped improving? Crossing the same pool again and again only
+ * rewords it: once STALL_AFTER new ideas in a row fail to beat the best, new
+ * material is needed (a fresh seed). Each seed planted after the best starts a
+ * new count. When FRESH_SEEDS seeds have not helped either, the board is
+ * exhausted and the autopilot stops spending on it.
+ *
+ * Returns { state: 'growing' | 'stalled' | 'exhausted', since, seeds, bestId, lastSeedId }.
+ * `since` counts judged, non-seed ideas after the best (or after the last fresh seed).
+ */
+export function stagnation(ideas, { after = STALL_AFTER, seeds = FRESH_SEEDS } = {}) {
+  const ordered = [...ideas].sort((a, b) => a.id - b.id);
+  const judged = ordered.filter((i) => fitness(i) != null);
+  if (!judged.length) return { state: 'growing', since: 0, seeds: 0, bestId: null, lastSeedId: null };
+  let best = judged[0];
+  for (const i of judged) if (fitness(i) > fitness(best)) best = i;
+  const fresh = ordered.filter((i) => i.id > best.id && i.kind === 'seed');
+  const lastSeedId = fresh.length ? fresh[fresh.length - 1].id : null;
+  const mark = lastSeedId ?? best.id;
+  const since = judged.filter((i) => i.id > mark && i.kind !== 'seed').length;
+  const state = since < after ? 'growing' : fresh.length >= seeds ? 'exhausted' : 'stalled';
+  return { state, since, seeds: fresh.length, bestId: best.id, lastSeedId };
+}

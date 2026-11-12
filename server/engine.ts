@@ -5,7 +5,7 @@
 
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import type { Repo, Idea, Board } from './db.ts';
+import type { Repo, Idea, Board, Lead } from './db.ts';
 import { makeLLM, type JuryNotes, type Lang, type Verdict } from './llm.ts';
 import { asUrl, fetchPage as realFetchPage } from './extract.ts';
 import { fetchPapers as realFetchPapers, researchLeads, xLeads } from './leads.ts';
@@ -13,7 +13,7 @@ import { writeBrief, writeProject } from './project.ts';
 import { writeNote } from './vault.ts';
 import { ProviderError, type AppSettings, type ChatFn, type Role } from './providers.ts';
 import { fitness, isJudged, medal, scoreSum } from '../public/js/score.js';
-import { DUPLICATE_AT, nextMove, overused, pairKey, similarity, wordSet } from '../public/js/evolve.js';
+import { DUPLICATE_AT, nextMove, overused, pairKey, similarity, stagnation, wordSet } from '../public/js/evolve.js';
 
 export class AppError extends Error {
   status: number;
@@ -122,7 +122,7 @@ export function createEngine(deps: Deps) {
   }
 
   // Moves that only produced repeats, so the autopilot does not make them again (until restart).
-  const barren = { expand: new Set<number>(), pairs: new Set<string>() };
+  const barren = { expand: new Set<number>(), pairs: new Set<string>(), fresh: new Map<number, number>() };
 
   /** Every LLM call: spend lands on the board's ledger; failures become 502s that keep the provider's code. */
   async function call<T extends { costUsd: number }>(boardId: number, fn: () => Promise<T>): Promise<T> {
@@ -319,6 +319,44 @@ export function createEngine(deps: Deps) {
     return { idea: created, edges };
   }
 
+  /** A lead becomes a seed: no model call, and its source link comes along. */
+  function plantLead(lead: Lead, pos: { x: number; y: number }) {
+    const idea = repo.insertIdea({
+      boardId: lead.boardId, title: lead.title, pitch: [lead.summary, lead.hook].filter(Boolean).join(' ').slice(0, 600),
+      kind: 'seed', sourceUrl: lead.url, x: pos.x, y: pos.y, generation: 0,
+    });
+    const used = repo.markLeadUsed(lead.id, idea.id)!;
+    emitIdeas(lead.boardId, [idea]);
+    bus.emit(lead.boardId, { type: 'leads', source: lead.source, leads: repo.listLeads(lead.boardId).filter((l) => l.source === lead.source) });
+    return { idea, lead: used };
+  }
+
+  /**
+   * New material for a stuck board. An unused lead from the board's scouts comes first: it is
+   * grounded in something real and costs nothing. Otherwise the model writes a seed from the
+   * board's best ideas, the summary's gaps and the jury's objections, pointed somewhere new.
+   */
+  async function doFresh(board: Board, ideas: Idea[], since: number) {
+    const lead = repo.listLeads(board.id).find((l) => l.ideaId == null && !isRepeat({ title: l.title, pitch: l.summary }, ideas));
+    if (lead) return plantLead(lead, besideBoard(ideas)).idea;
+    const best = ideas
+      .filter((i) => scoreSum(i) != null)
+      .sort((x, y) => (fitness(y) ?? 0) - (fitness(x) ?? 0))
+      .slice(0, 3)
+      .map((i) => ({ title: i.title, pitch: i.pitch, sum: scoreSum(i)!, reason: i.reason ?? '' }));
+    const { idea: drafted } = await call(board.id, () =>
+      llm.fresh({
+        model: modelFor(board, 'expand'), flow: board.config.flow, board, lang: board.config.lang,
+        existingTitles: ideas.map((i) => i.title), best, since, gaps: board.summary?.gaps ?? [], jury: juryNotes(board, ideas),
+      }),
+    );
+    if (isRepeat(drafted, ideas)) throw new AppError(409, 'repeat', 'The model only repeated an idea that is already on the board');
+    const pos = besideBoard(ideas);
+    const idea = repo.insertIdea({ boardId: board.id, ...drafted, kind: 'seed', x: pos.x, y: pos.y, generation: 0 });
+    emitIdeas(board.id, [idea]);
+    return idea;
+  }
+
   return {
     bus,
     judging,
@@ -512,15 +550,9 @@ export function createEngine(deps: Deps) {
       const lead = repo.getLead(leadId);
       if (!lead) throw new AppError(404, 'not_found', 'Lead not found');
       const pos = Number.isFinite(at.x) && Number.isFinite(at.y) ? { x: at.x!, y: at.y! } : besideBoard(repo.listIdeas(lead.boardId));
-      const idea = repo.insertIdea({
-        boardId: lead.boardId, title: lead.title, pitch: [lead.summary, lead.hook].filter(Boolean).join(' ').slice(0, 600),
-        kind: 'seed', sourceUrl: lead.url, x: pos.x, y: pos.y, generation: 0,
-      });
-      const used = repo.markLeadUsed(lead.id, idea.id)!;
-      emitIdeas(lead.boardId, [idea]);
-      bus.emit(lead.boardId, { type: 'leads', source: lead.source, leads: repo.listLeads(lead.boardId).filter((l) => l.source === lead.source) });
-      queueJudge([idea.id]);
-      return { idea, lead: used };
+      const out = plantLead(lead, pos);
+      queueJudge([out.idea.id]);
+      return out;
     },
 
     /**
@@ -528,8 +560,8 @@ export function createEngine(deps: Deps) {
      * tournament selection) or mutate (expand a strong idea). Awaits its own
      * judgements so the next step sees the scores.
      */
-    async autoStep(boardId: number): Promise<{ did: 'idle' | 'judge' | 'expand' | 'combine'; reason?: string; ids?: number[] }> {
-      mustBoard(boardId);
+    async autoStep(boardId: number): Promise<{ did: 'idle' | 'judge' | 'expand' | 'combine' | 'seed'; reason?: string; ids?: number[] }> {
+      const board = mustBoard(boardId);
       const ideas = repo.listIdeas(boardId);
       if (!ideas.length) return { did: 'idle', reason: 'empty' };
       const judgeAll = async (ids: number[]) => {
@@ -543,6 +575,33 @@ export function createEngine(deps: Deps) {
         return { did: 'judge', ids: unjudged.map((i) => i.id) };
       }
       const edges = repo.listEdges(boardId);
+      // A board that stopped improving gets new material instead of more crossings of the same pool.
+      const stall = stagnation(ideas);
+      // Three fresh seeds in a row that only repeated the board: as stuck as two that did not help.
+      if (stall.state === 'exhausted' || (stall.state === 'stalled' && (barren.fresh.get(boardId) ?? 0) >= 3)) {
+        return { did: 'idle', reason: 'exhausted' };
+      }
+      if (stall.state !== 'stalled') barren.fresh.delete(boardId);
+      try {
+        if (stall.state === 'stalled') {
+          const seed = await doFresh(board, ideas, stall.since);
+          await judgeAll([seed.id]);
+          return { did: 'seed', ids: [seed.id] };
+        }
+        // A fresh seed is expanded first: the breeding cut would bury it before it had children.
+        const fresh = stall.lastSeedId;
+        if (fresh != null && !edges.some((e) => e.from === fresh) && !barren.expand.has(fresh) && !judging.has(fresh)) {
+          const r = await doExpand(fresh);
+          await judgeAll(r.ideas.map((i) => i.id));
+          return { did: 'expand', ids: r.ideas.map((i) => i.id) };
+        }
+      } catch (e: any) {
+        if (e instanceof AppError && e.code === 'repeat') {
+          if (stall.state === 'stalled') barren.fresh.set(boardId, (barren.fresh.get(boardId) ?? 0) + 1);
+          return { did: 'idle', reason: 'repeat' };
+        }
+        throw e;
+      }
       let move = nextMove(ideas, edges, { busy: judging, inFlight: barren.pairs, noExpand: barren.expand });
       // A move that once gave only repeats may work on another try (the model samples). Rather
       // than stall a small board for good, forget this board's barren moves and try again.

@@ -315,6 +315,34 @@ export function makeLLM(chat: ChatFn) {
       return { idea, costUsd };
     },
 
+    /**
+     * A new seed for a board that has stopped improving: the same pool crossed again only
+     * rewords itself, so this starts from somewhere the board has not been.
+     */
+    async fresh(a: {
+      model: string; flow: Flow; board: BoardCtx; lang: Lang; existingTitles: string[];
+      best: { title: string; pitch: string; sum: number; reason: string }[]; since: number; gaps: string[]; jury?: JuryNotes;
+    }) {
+      const user = [
+        `This board has stopped improving: the last ${a.since} ideas did not beat its best. Crossing the same ideas again will only reword them.`,
+        a.best.length
+          ? `Its strongest ideas so far, with the jury's view:\n${a.best.map((i) => `- ${fmtIdea(i)} [jury ${i.sum}/15: ${i.reason}]`).join('\n')}`
+          : '',
+        a.gaps.length ? `Gaps toward the goal that an earlier review of this board found:\n${a.gaps.map((g) => `- ${g}`).join('\n')}` : '',
+        context(a.board, a.existingTitles),
+        juryBrief(a.jury),
+        'Write ONE new seed idea that serves the goal from a different starting point: another user, another problem, another mechanism or another market than the ideas above. ' +
+          'If gaps are listed, close one of them. It must be concrete enough for this jury to score well on its own, not a theme for later work.',
+        languageRule(a.lang),
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      const { value, costUsd } = await gen(a.model, a.flow.system, user, 'seed', PITCH_SCHEMA);
+      const idea = tidy(value);
+      if (!idea.title) throw new Error('The model returned no idea');
+      return { idea, costUsd };
+    },
+
     /** A synthesis of everything on a board. ideas: sorted strongest first. */
     async summarize(a: {
       model: string; board: BoardCtx; lang: Lang;

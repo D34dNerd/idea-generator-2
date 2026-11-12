@@ -5,7 +5,7 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 ## Commands
 
 - `npm start` – server on http://localhost:8300 (`PORT`, `HOST`, `DB_FILE` override)
-- `npm test` – 73 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
+- `npm test` – 76 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
 - `npm run calibrate [-- --model provider:model]` – real judge against weak and strong reference ideas. It costs money. **Re-run it whenever the judge's prompt, schema or model changes.**
 
 ## Layout
@@ -37,8 +37,9 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 - **OpenRouter: send `reasoning:{enabled:false}`** and retry without it on a 400 that mentions reasoning (some models insist on reasoning).
 - **Groq (`json_validate_failed`):** reasoning models like GPT-OSS can spend the whole budget thinking and return empty JSON; retry once with 4× `max_tokens`, then fall back to JSON in the prompt.
 - **X scout:** a lead is kept only if its URL is in the search engine's `url_citation` annotations. Never trust a URL the model wrote. Only OpenRouter (Grok) can search X.
-- **Subscription CLIs (`agy:`, `claudecode:`):** no key, cost 0, at most two processes per CLI. The schema goes into the prompt and the JSON is pulled out of the text answer. `claude` gets the prompt on stdin and runs without `ANTHROPIC_API_KEY`, or it would bill the key instead of the subscription. `agy` gets it as an argument, or through `prompt.md` when it is over 20,000 characters or `agy` is a `.cmd` shim. `AGY_BIN` and `CLAUDE_BIN` override the lookup on PATH.
+- **Subscription CLIs (`agy:`, `claudecode:`):** no key, cost 0, at most two processes per CLI. The schema goes into the prompt and the JSON is pulled out of the text answer. `claude` gets the prompt on stdin and runs without `ANTHROPIC_API_KEY`, or it would bill the key instead of the subscription. `agy` gets it as an argument, or through `prompt.md` when it is over 20,000 characters or `agy` is a `.cmd` shim. `AGY_BIN` and `CLAUDE_BIN` override the lookup on PATH. The Test button runs `--version` and then one short call (90 s) to every model the roles use on that CLI (`probeModels`): a wrong model name otherwise only shows up as a silent autopilot backoff.
 - **Generators are told what the jury said.** `expand` and `combine` receive the parents' scores and reasons, the board's jury guidance, the latest rejections and the board's overused words (`juryNotes` in `engine.ts`, `juryBrief` in `llm.ts`). One of an expansion's three ideas repairs its parent. Do not take this out: without it ten generations scored a flat 6/15.
+- **A stuck board gets new material, then stops.** When 8 judged ideas in a row fail to beat the best (`stagnation` in `evolve.js`), the autopilot plants a fresh seed: an unused scout lead first (free, grounded), otherwise `llm.fresh` writes one from the best ideas, the summary's gaps and the jury's objections. The fresh seed is expanded before breeding resumes, or the breeding cut would bury it. After 2 fresh seeds that do not help (or 3 that only repeat the board), it idles with reason `exhausted` and the chip says so; a new best or a seed of the user's own restarts the count.
 - **Repeats are dropped before they are judged:** same title, or word overlap of 0.5 and up (`DUPLICATE_AT`). Models paraphrase, so overlap only catches near-copies; `overused` and the jury's "similar ideas" handle the rest.
 - **Weak ideas are hidden, never deleted.** "Hide weak" (`hiddenWeak` in `evolve.js`) takes ideas without a medal off the canvas, except seeds, unjudged ideas and the ancestors of anything that stays. They remain in the DB because `juryNotes` builds the generators' list of rejections from them.
 - **The goal holds 4,000 characters.** At 600 a pasted brief was cut before its actual objective.

@@ -328,12 +328,12 @@ function renderAutopilot() {
   }
   const secs = st.until ? Math.max(0, Math.ceil((st.until - Date.now()) / 1000)) : 0;
   const time = st.until ? new Date(st.until).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }) : '';
-  const key = st.state === 'idle' ? (st.last === 'empty' ? 'ap_idle_empty' : st.last === 'nothing_to_do' ? 'ap_idle_nothing' : 'ap_idle') : `ap_${st.state}`;
+  const key = st.state === 'idle' ? (st.last === 'empty' ? 'ap_idle_empty' : st.last === 'nothing_to_do' ? 'ap_idle_nothing' : st.last === 'exhausted' ? 'ap_idle_exhausted' : 'ap_idle') : `ap_${st.state}`;
   // Long provider errors go in the tooltip; the chip shows the start.
   const m = (st.message ?? '').length > 140 ? `${st.message.slice(0, 140)}…` : st.message ?? '';
   chip.textContent = t(key, { s: `${secs} s`, time, m }).replace(/ · $/, '');
   chip.title = [st.message, t('apMeta', { n: st.stepsLastHour ?? 0, usd: (st.spentToday ?? S.spentToday ?? 0).toFixed(3) })].filter(Boolean).join('\n');
-  chip.className = `ap-chip ${['error', 'backoff', 'board_budget', 'global_budget', 'hourly'].includes(st.state) ? 'warn' : st.state === 'running' ? 'busy' : ''}`;
+  chip.className = `ap-chip ${['error', 'backoff', 'board_budget', 'global_budget', 'hourly'].includes(st.state) || st.last === 'exhausted' ? 'warn' : st.state === 'running' ? 'busy' : ''}`;
   $('#ex-status').textContent = chip.textContent;
 }
 setInterval(() => S.autopilot?.until && renderAutopilot(), 1000);
