@@ -92,6 +92,22 @@ const JUDGE_SCHEMA = {
   additionalProperties: false,
 };
 
+// Pre-mortem first: imagine the failure, then rewrite against its most likely cause.
+const REFINE_SCHEMA = {
+  type: 'object',
+  properties: {
+    premortem: {
+      type: 'array',
+      description: 'It is a year later and the idea failed. The three most likely reasons, most likely first, each one concrete sentence.',
+      items: { type: 'string' },
+    },
+    fix: { type: 'string', description: 'One sentence: what changes in what actually happens, so the most likely reason cannot occur.' },
+    ...PITCH_PROPS,
+  },
+  required: ['premortem', 'fix', 'title', 'pitch'],
+  additionalProperties: false,
+};
+
 // Several ideas in one call: each item is a full judgement, tagged with the idea's number.
 const JUDGE_MANY_SCHEMA = {
   type: 'object',
@@ -356,6 +372,32 @@ export function makeLLM(chat: ChatFn) {
       const idea = tidy(value);
       if (!idea.title) throw new Error('The model returned no idea');
       return { idea, costUsd };
+    },
+
+    /**
+     * The idea, rewritten after a pre-mortem: why would it have failed a year from now, and what
+     * must change in what actually happens so the most likely cause cannot occur. One directed
+     * step on a strong idea, where expand and combine take random ones.
+     */
+    async refine(a: { model: string; flow: Flow; board: BoardCtx; idea: Pitch; verdict: Verdict | null; existingTitles: string[]; lang: Lang; jury?: JuryNotes }) {
+      const user = [
+        `The idea:\n${fmtIdea(a.idea)}`,
+        a.verdict ? `The jury's verdict: ${fmtVerdict(a.verdict)}` : '',
+        'Run a pre-mortem. It is a year from now and this idea, built as written, has failed. Write the three most likely reasons, most likely first: ' +
+          'who did not use or pay for it and why, what did not work in practice, what someone else already did better. Use the jury\'s objection if it is one of them.',
+        'Then rewrite the idea so that the most likely reason cannot happen. Change what actually happens (the user, the mechanism, the channel or the first test), not the wording. ' +
+          'Keep what the jury credited, keep it the same idea at heart and on the board\'s goal, and keep it as concrete: name who, what happens, and the first small test.',
+        context(a.board, a.existingTitles),
+        juryBrief(a.jury),
+        languageRule(a.lang),
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      const { value, costUsd } = await gen(a.model, a.flow.system, user, 'refine', REFINE_SCHEMA, 1500);
+      const idea = tidy(value);
+      if (!idea.title) throw new Error('The model returned no idea');
+      const premortem = (Array.isArray(value?.premortem) ? value.premortem : []).map((x: unknown) => String(x).trim()).filter(Boolean).slice(0, 3);
+      return { idea, premortem, fix: String(value?.fix ?? '').trim(), costUsd };
     },
 
     /** Turn a long text or a fetched web page into one seed idea. */

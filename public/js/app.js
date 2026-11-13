@@ -235,6 +235,22 @@ async function expand(id) {
   }
 }
 
+async function refine(id) {
+  graph.setBusy([id], true);
+  const clearGhosts = graph.addGhosts(graph.ghostsAround(id).slice(0, 1));
+  try {
+    const r = await api('POST', `/api/ideas/${id}/refine`, {});
+    S.ideas.set(r.idea.id, r.idea); graph.upsert(r.idea);
+    graph.addEdges(r.edges);
+    if (r.premortem?.length) toast(`${t('refineDone')} ${r.premortem[0]}`);
+  } catch (e) {
+    fail(e);
+  } finally {
+    clearGhosts();
+    graph.setBusy([id], false);
+  }
+}
+
 async function combine(a, b) {
   const na = graph.nodes.get(a), nb = graph.nodes.get(b);
   graph.setBusy([a, b], true);
@@ -375,7 +391,7 @@ function renderPanel() {
 }
 
 function kindTag(idea) {
-  return h('span', { class: 'kind' }, h('span', { class: 'swatch', style: { background: KIND_COLORS[idea.kind] } }), t(`kind_${idea.kind}`));
+  return h('span', { class: 'kind' }, h('span', { class: 'swatch', style: { background: KIND_COLORS[idea.kind] } }), t(idea.op === 'refine' ? 'kind_refine' : `kind_${idea.kind}`));
 }
 
 function scoreBlock(idea) {
@@ -440,6 +456,7 @@ function renderIdea(idea) {
     ),
     h('div', { class: 'actions' },
       h('button', { class: 'btn primary', title: t('expandHint'), onclick: () => expand(idea.id) }, `＋ ${t('expand')}`),
+      h('button', { class: 'btn', title: t('refineHint'), onclick: () => refine(idea.id) }, `🔧 ${t('refine')}`),
       h('button', { class: 'btn', onclick: () => { graph.setPick(idea.id); toast(t('combinePick')); } }, `⚡ ${t('combineWith')}`),
       h('button', { class: 'btn', onclick: () => rejudge(idea.id) }, t('rejudge')),
       h('button', { class: 'btn', title: t('announceHint'), onclick: () => announceDialog(idea) }, `📣 ${t('announce')}`),

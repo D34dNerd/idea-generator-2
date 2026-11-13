@@ -13,7 +13,7 @@ import { writeBrief, writeProject } from './project.ts';
 import { writeNote } from './vault.ts';
 import { ProviderError, type AppSettings, type ChatFn, type Role } from './providers.ts';
 import { fitness, isJudged, medal, onGoal, scoreSum } from '../public/js/score.js';
-import { DUPLICATE_AT, nextMove, overused, pairKey, rootsOf, similarity, stagnation, wordSet } from '../public/js/evolve.js';
+import { DUPLICATE_AT, nextMove, overused, pairKey, refineTarget, rootsOf, similarity, stagnation, wordSet } from '../public/js/evolve.js';
 
 export class AppError extends Error {
   status: number;
@@ -72,6 +72,8 @@ type Deps = {
   fetchPapers?: typeof realFetchPapers;
   reveal?: (path: string) => void;
   gitInit?: boolean;
+  /** Randomness for the evolution's choices (tests pass a fixed one). */
+  rng?: () => number;
 };
 
 export function createEngine(deps: Deps) {
@@ -135,7 +137,7 @@ export function createEngine(deps: Deps) {
   }
 
   // Moves that only produced repeats, so the autopilot does not make them again (until restart).
-  const barren = { expand: new Set<number>(), pairs: new Set<string>(), fresh: new Map<number, number>() };
+  const barren = { expand: new Set<number>(), pairs: new Set<string>(), fresh: new Map<number, number>(), refine: new Set<number>() };
 
   /** Every LLM call: spend lands on the board's ledger; failures become 502s that keep the provider's code. */
   async function call<T extends { costUsd: number }>(boardId: number, fn: () => Promise<T>): Promise<T> {
@@ -351,6 +353,33 @@ export function createEngine(deps: Deps) {
     return { ideas: created, edges };
   }
 
+  /** One idea rewritten after a pre-mortem: a single child, kind 'expand', op 'refine'. */
+  async function doRefine(ideaId: number) {
+    const parent = mustIdea(ideaId);
+    const board = mustBoard(parent.boardId);
+    const onBoard = repo.listIdeas(board.id);
+    const { idea: drafted, premortem, fix } = await call(board.id, () =>
+      llm.refine({
+        model: modelFor(board, 'expand'), flow: board.config.flow, board, idea: parent, verdict: verdictOf(parent),
+        existingTitles: onBoard.map((i) => i.title), lang: board.config.lang, jury: juryNotes(board, onBoard, [parent]),
+      }),
+    );
+    // A rewrite shares words with its parent by design; it must not repeat anything else.
+    if (isRepeat(drafted, onBoard.filter((i) => i.id !== parent.id)) || drafted.title.trim().toLowerCase() === parent.title.trim().toLowerCase()) {
+      barren.refine.add(parent.id);
+      throw new AppError(409, 'repeat', 'The rewrite only repeated an idea that is already on the board');
+    }
+    const [spot] = arcPositions(parent, repo.parentsOf(parent.id)[0] ?? null, 1);
+    const created = repo.insertIdea(
+      { boardId: board.id, ...drafted, kind: 'expand', op: 'refine', x: spot.x, y: spot.y, generation: parent.generation + 1 },
+      [parent.id],
+    );
+    const edges = [{ from: parent.id, to: created.id }];
+    emitIdeas(board.id, [created]);
+    bus.emit(board.id, { type: 'edges', edges });
+    return { idea: created, edges, premortem, fix };
+  }
+
   async function doCombine(boardId: number, aId: number, bId: number) {
     const board = mustBoard(boardId);
     if (!Number.isInteger(aId) || !Number.isInteger(bId) || aId === bId) throw new AppError(400, 'bad_pair', 'Pick two different ideas');
@@ -465,6 +494,12 @@ export function createEngine(deps: Deps) {
     async expand(ideaId: number) {
       const out = await doExpand(ideaId);
       queueJudge(out.ideas.map((i) => i.id));
+      return out;
+    },
+
+    async refine(ideaId: number) {
+      const out = await doRefine(ideaId);
+      queueJudge([out.idea.id]);
       return out;
     },
 
@@ -624,7 +659,7 @@ export function createEngine(deps: Deps) {
      * tournament selection) or mutate (expand a strong idea). Awaits its own
      * judgements so the next step sees the scores.
      */
-    async autoStep(boardId: number): Promise<{ did: 'idle' | 'judge' | 'expand' | 'combine' | 'seed'; reason?: string; ids?: number[] }> {
+    async autoStep(boardId: number): Promise<{ did: 'idle' | 'judge' | 'expand' | 'combine' | 'seed' | 'refine'; reason?: string; ids?: number[] }> {
       const board = mustBoard(boardId);
       const ideas = repo.listIdeas(boardId);
       if (!ideas.length) return { did: 'idle', reason: 'empty' };
@@ -666,13 +701,27 @@ export function createEngine(deps: Deps) {
         }
         throw e;
       }
-      let move = nextMove(ideas, edges, { busy: judging, inFlight: barren.pairs, noExpand: barren.expand });
+      // Every other move refines one of the best on-goal ideas (pre-mortem and rewrite); the rest
+      // breed as before, which keeps the board varied.
+      const newest = ideas.reduce<Idea | null>((m, i) => (i.kind !== 'seed' && (!m || i.id > m.id) ? i : m), null);
+      const target = newest?.op === 'refine' ? null : refineTarget(ideas, edges, { skip: new Set([...barren.refine, ...judging]) });
+      if (target) {
+        try {
+          const r = await doRefine(target.id);
+          await judgeAll([r.idea.id]);
+          return { did: 'refine', ids: [r.idea.id] };
+        } catch (e: any) {
+          if (e instanceof AppError && e.code === 'repeat') return { did: 'idle', reason: 'repeat' };
+          throw e;
+        }
+      }
+      let move = nextMove(ideas, edges, { rng: deps.rng, busy: judging, inFlight: barren.pairs, noExpand: barren.expand });
       // A move that once gave only repeats may work on another try (the model samples). Rather
       // than stall a small board for good, forget this board's barren moves and try again.
       if (!move && (barren.expand.size || barren.pairs.size)) {
         for (const i of ideas) barren.expand.delete(i.id);
         for (const a of ideas) for (const c of ideas) barren.pairs.delete(pairKey(a.id, c.id));
-        move = nextMove(ideas, edges, { busy: judging });
+        move = nextMove(ideas, edges, { rng: deps.rng, busy: judging });
       }
       if (!move) return { did: 'idle', reason: 'nothing_to_do' };
       try {

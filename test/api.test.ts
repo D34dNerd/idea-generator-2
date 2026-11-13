@@ -28,7 +28,8 @@ async function fakeChat(r: ChatRequest) {
   }
   const n = calls.length;
   const value =
-    r.schemaName === 'expand' ? { ideas: [1, 2, 3].map((k) => ({ title: `"Barn ${n}.${k}."`, pitch: `Pitch ${k}` })) }
+    r.schemaName === 'refine' ? { premortem: ['Ninguém usa.'], fix: 'f', title: `Refinada ${n}`, pitch: 'Pitch refinado' }
+    : r.schemaName === 'expand' ? { ideas: [1, 2, 3].map((k) => ({ title: `"Barn ${n}.${k}."`, pitch: `Pitch ${k}` })) }
     : r.schemaName === 'judgement' ? { reason: 'Stark mekanism, oklar kund.', ...judgeScores, keywords: judgeKeywords }
     : r.schemaName === 'summary' ? { headline: 'Tavlan rör sig mot ljud.', themes: [{ name: 'Ljud', insight: 'Allt låter.', ideas: ['Lånecyklar'] }], strongest: [{ title: 'Korsning', why: 'Konkret.' }], gaps: ['Ingen tänker på natten.'], nextSteps: ['Korsa A och B.'] }
     : r.schemaName === 'synthesis' ? { headline: 'Bänkarna dominerar.', insights: ['i1', 'i2', 'i3'], standouts: [{ title: 'Sjungande parkbänk', board: 'X', why: 'w' }], opportunities: ['o1', 'o2'], nextSteps: ['n1', 'n2'] }
@@ -515,6 +516,18 @@ test('with no written goal, the first seed is what fit is judged against', async
   await seed(board.id, 'Pão de fermentação natural');
   await engine.idle();
   assert.match(lastCall('judgement').user, /It started from this idea[^\n]*\nGuia RA para montar móveis/);
+});
+
+test('refine by hand: one rewritten child, and the pre-mortem comes back', async () => {
+  const board = await newBoard({ goal: 'Guias RA', lang: 'pt' });
+  const s = await seed(board.id, 'Guia RA para montar móveis');
+  await engine.idle();
+  const r = await api('POST', `/api/ideas/${s.id}/refine`, {});
+  assert.equal(r.status, 200);
+  assert.equal(r.data.idea.op, 'refine');
+  assert.deepEqual(r.data.premortem, ['Ninguém usa.']);
+  assert.deepEqual(r.data.edges, [{ from: s.id, to: r.data.idea.id }]);
+  await engine.idle();
 });
 
 test('a repeat is dropped before it is judged', async () => {
