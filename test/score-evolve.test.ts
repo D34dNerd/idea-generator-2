@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clampScore, fitness, medal, medalFromSum, onGoal, scoreSum } from '../public/js/score.js';
-import { breeders, evolutionStats, expandedIds, hiddenWeak, kinPairs, nextMove, overused, pairKey, population, rootsOf, similarity, stagnation, usedPairs, wordSet } from '../public/js/evolve.js';
+import { breeders, evolutionStats, expandedIds, hiddenWeak, kinPairs, nextMove, overused, pairKey, population, refineTarget, rootsOf, similarity, stagnation, usedPairs, wordSet } from '../public/js/evolve.js';
 
 const idea = (id: number, sum: number | null, extra: any = {}) => {
   const base: any = { id, kind: 'expand', generation: 1, medalOverride: null, ...extra };
@@ -242,4 +242,19 @@ test('rootsOf: the seeds a line started from', () => {
   assert.deepEqual(rootsOf([4], edges), [1, 3]);
   assert.deepEqual(rootsOf([2], edges), [1]);
   assert.deepEqual(rootsOf([5], edges), [5]);
+});
+
+test('refineTarget: the fittest on-goal idea from bronze to below gold, once; a rewrite again only if it improved', () => {
+  assert.equal(refineTarget([idea(1, 8), idea(2, 13), idea(3, 12, { fit: 2 })], []), null, 'under bronze, gold and off-goal are left alone');
+  const ideas = [idea(1, 9), idea(2, 11), idea(3, 10)];
+  assert.equal(refineTarget(ideas, []).id, 2);
+  assert.equal(refineTarget(ideas, [], { skip: new Set([2]) }).id, 3);
+  // 2 was refined into 4 (12): 4 improved on 2, so it is next.
+  const better = [...ideas, idea(4, 12, { op: 'refine' })];
+  const edges = [{ from: 2, to: 4 }];
+  assert.equal(refineTarget(better, edges).id, 4);
+  // 2 was refined into 4 (10): no better, so the chain stops and the next idea gets its turn.
+  const worse = [...ideas, idea(4, 10, { op: 'refine' })];
+  assert.equal(refineTarget(worse, edges).id, 3);
+  assert.ok(!expandedIds(worse, edges).has(2), 'a rewrite is not an expansion');
 });

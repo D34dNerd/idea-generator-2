@@ -108,12 +108,13 @@ test('autoStep with the real engine: judge first, grow a small pool, then breed'
     n++;
     const value =
       r.schemaName === 'expand' ? { ideas: [1, 2, 3].map((k) => ({ title: `Idé ${n}.${k}`, pitch: 'p' })) }
-      // Scores that keep climbing, so the board never stalls and the test is about breeding alone.
-      : r.schemaName === 'judgement' ? { reason: 'r', originality: Math.min(5, 1 + Math.floor(n / 4)), feasibility: 3, impact: 3, keywords: ['k'] }
+      // Scores that climb (so the board never stalls) but stay under bronze (so nothing is refined): this test is about breeding.
+      : r.schemaName === 'judgement' ? { reason: 'r', originality: Math.min(4, 1 + Math.floor(n / 4)), feasibility: 2, impact: 2, keywords: ['k'] }
       : { title: `Korsning ${n}`, pitch: 'p' };
     return { value, costUsd: 0 };
   };
-  const engine = createEngine({ repo, chat, settings: () => DEFAULT_APP_SETTINGS, gitInit: false });
+  // A fixed draw over the mutation rate: once the pool has three ideas, every move is a cross.
+  const engine = createEngine({ repo, chat, settings: () => DEFAULT_APP_SETTINGS, gitInit: false, rng: () => 0.9 });
   const board = repo.createBoard({ title: 'B' });
   assert.deepEqual(await engine.autoStep(board.id), { did: 'idle', reason: 'empty' });
   repo.insertIdea({ boardId: board.id, title: 'Frö', pitch: '', kind: 'seed', x: 0, y: 0, generation: 0 });
@@ -240,4 +241,35 @@ test('judging in batches: one call for up to three ideas, a skipped verdict judg
   ['G', 'H'].forEach(seed);
   await assert.rejects(engine.autoStep(board.id), (e: any) => e.code === 'rate_limited');
   assert.equal(calls.length, 1);
+});
+
+test('refinement: every other autopilot move rewrites a strong idea after a pre-mortem', async () => {
+  const repo = openDb(':memory:');
+  const asked: ChatRequest[] = [];
+  let n = 0;
+  const chat = async (r: ChatRequest) => {
+    asked.push(r);
+    n++;
+    const value =
+      r.schemaName === 'refine' ? { premortem: ['Ninguém monta móveis sozinho com o celular na mão.', 'b', 'c'], fix: 'f', title: `Reescrita ${n}`, pitch: `texto novo ${n}` }
+      : r.schemaName === 'judgement' ? { reason: 'Falta quem pague.', fit: 4, originality: 3, feasibility: 3, impact: 4, keywords: ['k'] }
+      : { candidates: [], ideas: [1, 2, 3].map((k) => ({ title: `Gren ${n}.${k}`, pitch: `unik ${n} ${k}` })) };
+    return { value, costUsd: 0 };
+  };
+  const engine = createEngine({ repo, chat, settings: () => DEFAULT_APP_SETTINGS, gitInit: false, rng: () => 0.9 });
+  const board = repo.createBoard({ title: 'B', goal: 'Guias RA' });
+  const seed = repo.insertIdea({ boardId: board.id, title: 'Guia RA de móveis', pitch: 'p', kind: 'seed', x: 0, y: 0, generation: 0 });
+  repo.saveJudgement(seed.id, { originality: 3, feasibility: 3, impact: 4, fit: 5, reason: 'Falta quem pague.' });
+
+  const first = await engine.autoStep(board.id);
+  assert.equal(first.did, 'refine', 'a bronze idea is refined');
+  const rewrite = repo.getIdea(first.ids![0])!;
+  assert.equal(rewrite.op, 'refine');
+  assert.equal(rewrite.kind, 'expand');
+  assert.deepEqual(repo.parentsOf(rewrite.id).map((p) => p.id), [seed.id]);
+  const prompt = asked.find((r) => r.schemaName === 'refine')!.user;
+  assert.match(prompt, /Run a pre-mortem/);
+  assert.match(prompt, /The jury's verdict: originality 3\/5[^\n]*Falta quem pague\./);
+  assert.notEqual((await engine.autoStep(board.id)).did, 'refine', 'the next move breeds');
+  assert.ok(!(await engine.autoStep(board.id)).did.startsWith('idle'));
 });
