@@ -15,11 +15,12 @@ import { tmpdir } from 'node:os';
 import { delimiter, extname, isAbsolute, join } from 'node:path';
 
 export type CliId = 'agy' | 'claudecode';
-type CliDef = { bin: string; env: string; label: string; models: string[] };
+/** timeoutS: how long one headless turn may take. agy with gemini-3.8-flash-high took 84–202 s per step on a real board. */
+type CliDef = { bin: string; env: string; label: string; models: string[]; timeoutS: number };
 
 export const CLIS: Record<CliId, CliDef> = {
-  agy: { bin: 'agy', env: 'AGY_BIN', label: 'Antigravity CLI', models: ['gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low'] },
-  claudecode: { bin: 'claude', env: 'CLAUDE_BIN', label: 'Claude Code', models: ['sonnet', 'opus', 'haiku'] },
+  agy: { bin: 'agy', env: 'AGY_BIN', label: 'Antigravity CLI', models: ['gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low'], timeoutS: 300 },
+  claudecode: { bin: 'claude', env: 'CLAUDE_BIN', label: 'Claude Code', models: ['sonnet', 'opus', 'haiku'], timeoutS: 180 },
 };
 
 export class CliError extends Error {
@@ -118,7 +119,7 @@ async function withSlot<T>(id: CliId, fn: () => Promise<T>): Promise<T> {
 }
 
 /** One headless turn. Returns the model's text answer. */
-export async function cliText(id: CliId, model: string, prompt: string, timeoutS = TIMEOUT_S): Promise<string> {
+export async function cliText(id: CliId, model: string, prompt: string, timeoutS = CLIS[id].timeoutS): Promise<string> {
   const { label } = CLIS[id];
   const cmd = findBin(id);
   if (!cmd) throw new CliError('unreachable', `${label}: "${CLIS[id].bin}" is not on PATH. Install it, or set ${CLIS[id].env} to its full path.`);

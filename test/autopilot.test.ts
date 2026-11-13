@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { backoffMs, createAutopilot, nextLocalMidnight, rateCheck, type RateInput } from '../server/autopilot.ts';
 import { openDb } from '../server/db.ts';
 import { createBus, createEngine } from '../server/engine.ts';
-import { DEFAULT_APP_SETTINGS, type ChatRequest } from '../server/providers.ts';
+import { DEFAULT_APP_SETTINGS, ProviderError, type ChatRequest } from '../server/providers.ts';
 
 const T = Date.parse('2026-11-02T12:00:00');
 const base: RateInput = {
@@ -108,7 +108,8 @@ test('autoStep with the real engine: judge first, grow a small pool, then breed'
     n++;
     const value =
       r.schemaName === 'expand' ? { ideas: [1, 2, 3].map((k) => ({ title: `Idé ${n}.${k}`, pitch: 'p' })) }
-      : r.schemaName === 'judgement' ? { reason: 'r', originality: 2 + (n % 3), feasibility: 3, impact: 3, keywords: ['k'] }
+      // Scores that keep climbing, so the board never stalls and the test is about breeding alone.
+      : r.schemaName === 'judgement' ? { reason: 'r', originality: Math.min(5, 1 + Math.floor(n / 4)), feasibility: 3, impact: 3, keywords: ['k'] }
       : { title: `Korsning ${n}`, pitch: 'p' };
     return { value, costUsd: 0 };
   };
@@ -118,7 +119,7 @@ test('autoStep with the real engine: judge first, grow a small pool, then breed'
   repo.insertIdea({ boardId: board.id, title: 'Frö', pitch: '', kind: 'seed', x: 0, y: 0, generation: 0 });
 
   const did: string[] = [];
-  for (let i = 0; i < 6; i++) did.push((await engine.autoStep(board.id)).did);
+  for (let i = 0; i < 10; i++) did.push((await engine.autoStep(board.id)).did);
   assert.equal(did[0], 'judge', 'an unjudged seed is judged first');
   assert.equal(did[1], 'expand', 'a pool under three grows by expanding');
   assert.ok(did.includes('combine'), `breeds once the pool is big enough: ${did.join(',')}`);
@@ -190,4 +191,53 @@ test('the summary\'s gaps reach the generators', async () => {
   });
   await engine.expand(seed.id);
   assert.match(prompts[0], /gaps toward the goal:\n- Aplicações 100% digitais/);
+});
+
+test('judging in batches: one call for up to three ideas, a skipped verdict judged alone, a failed call fails them together', async () => {
+  const repo = openDb(':memory:');
+  const calls: ChatRequest[] = [];
+  let mode: 'all' | 'skip' | 'fail' = 'all';
+  const chat = async (r: ChatRequest) => {
+    calls.push(r);
+    if (r.schemaName === 'judgements') {
+      if (mode === 'fail') throw new ProviderError('rate_limited', 'usage limit');
+      const n = (r.user.match(/^Idea \d+:/gm) ?? []).length;
+      const verdicts = Array.from({ length: n }, (_, k) => ({ n: k + 1, reason: `r${k + 1}`, fit: 4, originality: 3, feasibility: 3, impact: 2 + k, keywords: ['k'] }));
+      return { value: { verdicts: mode === 'skip' ? verdicts.slice(1) : verdicts }, costUsd: 0 };
+    }
+    if (r.schemaName === 'judgement') return { value: { reason: 'alone', fit: 4, originality: 2, feasibility: 2, impact: 2, keywords: ['k'] }, costUsd: 0 };
+    return { value: { candidates: [], ideas: [1, 2, 3].map((k) => ({ title: `Gren ${calls.length}.${k}`, pitch: `unik text ${calls.length} ${k}` })) }, costUsd: 0 };
+  };
+  const engine = createEngine({ repo, chat, settings: () => DEFAULT_APP_SETTINGS, gitInit: false });
+  const board = repo.createBoard({ title: 'B', goal: 'Mål' });
+  const seed = (t: string) => repo.insertIdea({ boardId: board.id, title: t, pitch: '', kind: 'seed', x: 0, y: 0, generation: 0 });
+  const ids = ['A', 'B', 'C', 'D'].map((t) => seed(t).id);
+
+  // The autopilot judges the first three unjudged ideas in one call.
+  assert.equal((await engine.autoStep(board.id)).did, 'judge');
+  const batch = calls.filter((c) => c.schemaName === 'judgements');
+  assert.equal(batch.length, 1);
+  assert.match(batch[0].user, /Idea 3:\nC/);
+  assert.match(batch[0].user, /exactly as if it were the only one/);
+  assert.deepEqual(ids.slice(0, 3).map((id) => repo.getIdea(id)!.impact), [2, 3, 4], 'each verdict lands on its own idea');
+  assert.equal(repo.getIdea(ids[0])!.reason, 'r1');
+  assert.equal(repo.getIdea(ids[3])!.judgedAt, null);
+
+  // A verdict the model left out is judged on its own.
+  mode = 'skip';
+  calls.length = 0;
+  const more = ['E', 'F'].map((t) => seed(t).id);
+  engine.queueJudge([ids[3], ...more]);
+  await engine.idle();
+  assert.equal(calls.filter((c) => c.schemaName === 'judgements').length, 1, 'the queue batches too');
+  assert.equal(calls.filter((c) => c.schemaName === 'judgement').length, 1);
+  assert.equal(repo.getIdea(ids[3])!.reason, 'alone');
+  assert.equal(repo.getIdea(more[1])!.reason, 'r3');
+
+  // A failed call fails the batch once: the autopilot backs off instead of retrying each idea.
+  mode = 'fail';
+  calls.length = 0;
+  ['G', 'H'].forEach(seed);
+  await assert.rejects(engine.autoStep(board.id), (e: any) => e.code === 'rate_limited');
+  assert.equal(calls.length, 1);
 });

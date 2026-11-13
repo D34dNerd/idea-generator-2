@@ -92,6 +92,24 @@ const JUDGE_SCHEMA = {
   additionalProperties: false,
 };
 
+// Several ideas in one call: each item is a full judgement, tagged with the idea's number.
+const JUDGE_MANY_SCHEMA = {
+  type: 'object',
+  properties: {
+    verdicts: {
+      type: 'array',
+      description: 'One verdict per idea, in the order given.',
+      items: {
+        ...JUDGE_SCHEMA,
+        properties: { n: { type: 'integer', description: 'The number of the idea this verdict is for.' }, ...JUDGE_SCHEMA.properties },
+        required: ['n', ...JUDGE_SCHEMA.required],
+      },
+    },
+  },
+  required: ['verdicts'],
+  additionalProperties: false,
+};
+
 // ---------------------------------------------------------------- prompts
 
 function languageRule(lang: Lang) {
@@ -265,6 +283,19 @@ const SYNTHESIS_SCHEMA = {
   required: ['headline', 'insights', 'standouts', 'opportunities', 'nextSteps'],
   additionalProperties: false,
 };
+
+/** A model's verdict, clamped. hasGoal: false when there is nothing to fit (no goal, or the idea is the anchor). */
+function toJudgement(value: any, hasGoal: boolean): Judgement {
+  return {
+    originality: clampScore(value?.originality),
+    feasibility: clampScore(value?.feasibility),
+    impact: clampScore(value?.impact),
+    // A model that leaves fit out has not judged it: unknown counts as on the goal, not as 1.
+    fit: !hasGoal ? 5 : value?.fit == null || value.fit === '' ? null : clampScore(value.fit),
+    reason: String(value?.reason ?? '').trim().slice(0, 500),
+    keywords: normalizeKeywords(value?.keywords),
+  };
+}
 
 export function makeLLM(chat: ChatFn) {
   const gen = async (model: string, system: string, user: string, schemaName: string, schema: object, maxTokens?: number) => {
@@ -484,16 +515,51 @@ export function makeLLM(chat: ChatFn) {
         temperature: 0.2,
         maxTokens: 500,
       });
-      const judgement: Judgement = {
-        originality: clampScore(value?.originality),
-        feasibility: clampScore(value?.feasibility),
-        impact: clampScore(value?.impact),
-        // A model that leaves fit out has not judged it: unknown counts as on the goal, not as 1.
-        fit: !(a.board.goal.trim() || a.anchor) ? 5 : value?.fit == null || value.fit === '' ? null : clampScore(value.fit),
-        reason: String(value?.reason ?? '').trim().slice(0, 500),
-        keywords: normalizeKeywords(value?.keywords),
-      };
-      return { judgement, costUsd };
+      return { judgement: toJudgement(value, !!(a.board.goal.trim() || a.anchor)), costUsd };
+    },
+
+    /**
+     * Up to a few ideas in one call, each judged on its own. A subscription CLI starts a whole
+     * process per call, so this is most of the autopilot's speed. Returns one judgement per idea,
+     * in order; null where the model skipped one (the caller judges that one alone).
+     * anchor: as in judge; null for the idea that is itself the anchor.
+     */
+    async judgeMany(a: {
+      model: string; board: BoardCtx; lang: Lang; guidance?: string; vocabulary?: string[];
+      items: { idea: Pitch; similar?: Pitch[]; anchor?: Pitch | null }[];
+    }) {
+      const guidance = (a.guidance ?? '').trim();
+      const system = guidance ? `${JUDGE_SYSTEM}\n\nAdditional guidance from this board's facilitator:\n${guidance}` : JUDGE_SYSTEM;
+      const anchor = a.items.find((i) => i.anchor)?.anchor ?? null;
+      const hasGoal = !!a.board.goal.trim();
+      const user = [
+        hasGoal
+          ? `The board's goal: ${a.board.goal.trim()}`
+          : anchor
+            ? `The board has no written goal. It started from this idea, which stands in for the goal when you score fit:\n${fmtIdea(anchor)}`
+            : 'The board has no goal: score fit 5.',
+        `Judge each of the ${a.items.length} ideas below on its own, exactly as if it were the only one: do not compare them with each other, rank them or spread the scores between them.`,
+        ...a.items.map((it, n) =>
+          [
+            `Idea ${n + 1}:\n${fmtIdea(it.idea)}`,
+            it.similar?.length ? `Similar ideas already on the board (for idea ${n + 1}):\n${it.similar.map((i) => `- ${fmtIdea(i)}`).join('\n')}` : '',
+          ].filter(Boolean).join('\n'),
+        ),
+        `Write each reason in the language of its idea; if unclear, in ${LANG_NAME[a.lang]}.`,
+        a.vocabulary?.length ? `Keyword vocabulary in use (reuse when one fits): ${a.vocabulary.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      const { value, costUsd } = await chat({
+        model: a.model, system, user, schemaName: 'judgements', schema: JUDGE_MANY_SCHEMA, temperature: 0.2, maxTokens: 500 * a.items.length,
+      });
+      const verdicts: any[] = Array.isArray(value?.verdicts) ? value.verdicts : [];
+      const judgements = a.items.map((it, n) => {
+        const v = verdicts.find((x) => Number(x?.n) === n + 1) ?? (verdicts.length === a.items.length && verdicts.every((x) => x?.n == null) ? verdicts[n] : null);
+        if (!v || v.originality == null || v.feasibility == null || v.impact == null) return null;
+        return toJudgement(v, hasGoal || !!it.anchor);
+      });
+      return { judgements, costUsd };
     },
   };
 }

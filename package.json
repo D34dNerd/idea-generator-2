@@ -12,7 +12,8 @@
     "start": "node server/index.ts",
     "dev": "node --watch-path=server --watch-path=public/js/score.js --watch-path=public/js/evolve.js server/index.ts",
     "test": "node --test \"test/**/*.test.ts\"",
-    "calibrate": "node tools/calibrate-judge.ts"
+    "calibrate": "node tools/calibrate-judge.ts",
+    "benchmark": "node tools/benchmark.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0"

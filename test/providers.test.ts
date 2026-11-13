@@ -229,7 +229,7 @@ test('agy: one headless turn in an empty folder, JSON asked for in the prompt, n
   assert.equal(args[0], '-p');
   assert.match(args[1], /^sys\n\nusr/);
   assert.match(args[1], /Respond with ONLY a JSON object/);
-  assert.deepEqual(args.slice(2), ['--model', 'gemini-3.8-flash-high', '--mode', 'accept-edits', '--output-format', 'json', '--print-timeout', '180s']);
+  assert.deepEqual(args.slice(2), ['--model', 'gemini-3.8-flash-high', '--mode', 'accept-edits', '--output-format', 'json', '--print-timeout', '300s']);
   assert.match(cwd, /ideagen-agy-/, 'not the project folder: no AGENTS.md, no files to touch');
   assert.ok(!existsSync(cwd), 'the temp folder is removed afterwards');
 }));
