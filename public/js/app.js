@@ -6,6 +6,7 @@ import { t, getLang, getLocale, setLang, nextLang, langLabel, LANGS, applyI18n, 
 import { Graph, KIND_COLORS } from './graph.js';
 import { loadSettings, saveSettings, pushSettings, newBoardConfig, ROLES, PROVIDER_IDS, providersInUse, DEFAULTS } from './settings.js';
 import { medal, scoreSum, fitness, onGoal, CRITERIA } from './score.js';
+import { KINDS, NEEDS_BRIEF, critLabels, kindName, kindOf } from './kinds.js';
 import { evolutionStats, hiddenWeak } from './evolve.js';
 import { openDashboard } from './dashboard.js';
 import { openReport } from './report.js';
@@ -411,8 +412,8 @@ function scoreBlock(idea) {
     sum != null
       ? [...CRITERIA, ...(Number.isInteger(idea.fit) ? ['fit'] : [])].map((c) =>
           h('div', { class: 'meter-row' },
-            h('span', { class: 'meter-label' }, t(c)),
-            h('span', { class: 'meter', role: 'img', 'aria-label': `${t(c)} ${idea[c]}/5` },
+            h('span', { class: 'meter-label' }, critLabel(c)),
+            h('span', { class: 'meter', role: 'img', 'aria-label': `${critLabel(c)} ${idea[c]}/5` },
               [1, 2, 3, 4, 5].map((n) => h('span', { class: n <= idea[c] ? 'on' : '' }))),
             h('span', { class: 'meter-value' }, `${idea[c]}`),
           ),
@@ -524,14 +525,61 @@ async function makeProject(idea, btn) {
   }
 }
 
-async function spinoff(idea) {
-  try {
-    const r = await api('POST', `/api/ideas/${idea.id}/spinoff`, {});
-    await loadBoards();
-    await openBoard(r.board.id);
-  } catch (e) {
-    fail(e);
+/** The brief field: who a board works for. Posts and videos cannot do without it. */
+function briefInput(value = '') {
+  return h('textarea', { rows: 4, placeholder: t('briefPh') }, value);
+}
+
+/** A kind picker that shows the brief only where it matters and says what the jury scores. */
+function kindPicker(initial, brief) {
+  const kind = h('select', {}, KINDS.map((k) => h('option', { value: k, selected: k === initial }, kindName(k, getLang()))));
+  const note = h('small', { class: 'muted' });
+  const briefField = field(t('brief'), brief, t('briefNote'));
+  const sync = () => {
+    note.textContent = t(`kindNote_${kind.value}`);
+    briefField.hidden = kind.value === 'ideas';
+  };
+  kind.addEventListener('change', sync);
+  sync();
+  return { kind, note, briefField, sync };
+}
+
+/** Posts and videos need a brief; say so instead of making a board that writes for nobody. */
+function briefMissing(kind, brief) {
+  if (NEEDS_BRIEF.includes(kind) && !brief.value.trim()) {
+    toast(t('briefNeeded'));
+    brief.focus();
+    return true;
   }
+  return false;
+}
+
+async function spinoff(idea) {
+  const brief = briefInput(S.board?.config.brief ?? '');
+  const pick = kindPicker(kindOf(S.board), brief);
+  const go = h('button', {
+    class: 'btn primary',
+    onclick: async (e) => {
+      e.preventDefault();
+      if (briefMissing(pick.kind.value, brief)) return;
+      go.disabled = true;
+      // Another kind rewrites the idea as its first seed: a model call, so it can take a while.
+      if (pick.kind.value !== kindOf(S.board)) toast(t('spinoffWorking'));
+      try {
+        const r = await api('POST', `/api/ideas/${idea.id}/spinoff`, { kind: pick.kind.value, brief: brief.value });
+        dlg.close();
+        await loadBoards();
+        await openBoard(r.board.id);
+      } catch (err) {
+        go.disabled = false;
+        fail(err);
+      }
+    },
+  }, t('create'));
+  const dlg = dialog('dlg', t('spinoff'), [
+    h('p', { class: 'muted' }, idea.title),
+    field(t('boardKind'), pick.kind), pick.note, h('small', { class: 'muted' }, t('spinoffKindNote')), pick.briefField,
+  ], [h('button', { class: 'btn', value: 'cancel' }, t('cancel')), go]);
 }
 
 function renderOverview() {
@@ -657,22 +705,36 @@ function field(label, input, note) {
   return h('label', { class: 'field' }, h('span', {}, label), input, note ? h('small', { class: 'muted' }, note) : null);
 }
 
+/** A criterion's name on the open board: each board kind names its three criteria its own way (kinds.js). */
+function critLabel(c) {
+  const n = CRITERIA.indexOf(c);
+  return n < 0 ? t(c) : critLabels(kindOf(S.board), getLang())[n];
+}
+
 async function newBoardDialog(first = false) {
   if (!S.templates.length) S.templates = (await api('GET', '/api/templates')).templates;
   const title = h('input', { required: true, placeholder: t('newBoard') });
   const goal = h('textarea', { rows: 3, placeholder: t('goalPlaceholder') });
+  const brief = briefInput();
+  const { kind, note: kindNote, briefField } = kindPicker('ideas', brief);
   const tpl = h('select', {}, S.templates.map((x) => h('option', { value: x.id }, localName(x.name))));
+  // Templates are written for idea boards; the other kinds bring their own generators.
+  const tplField = field(t('template'), tpl);
+  const syncTpl = () => { tplField.hidden = kind.value !== 'ideas'; };
+  kind.addEventListener('change', syncTpl);
   const dlg = dialog('dlg', t('newBoard'), [
     first ? h('p', {}, t('firstRun')) : null,
-    field(t('title'), title), field(t('goal'), goal), field(t('template'), tpl),
+    field(t('title'), title), field(t('boardKind'), kind), kindNote, briefField, field(t('goal'), goal), tplField,
   ], [
     h('button', { class: 'btn', value: 'cancel' }, t('cancel')),
     h('button', {
       class: 'btn primary',
       onclick: async (e) => {
         e.preventDefault();
+        if (briefMissing(kind.value, brief)) return;
         try {
-          const { board } = await api('POST', '/api/boards', { title: title.value, goal: goal.value, templateId: Number(tpl.value), lang: getLang(), config: newBoardConfig(S.settings) });
+          const config = { ...newBoardConfig(S.settings), brief: brief.value };
+          const { board } = await api('POST', '/api/boards', { title: title.value, goal: goal.value, kind: kind.value, templateId: Number(tpl.value), lang: getLang(), config });
           dlg.close();
           await loadBoards();
           await openBoard(board.id);
@@ -690,6 +752,7 @@ async function boardSettingsDialog() {
   const inp = (value, props = {}) => h('input', { value, ...props });
   const area = (value, rows = 3, props = {}) => h('textarea', { rows, ...props }, value);
   const title = inp(b.title), goal = area(b.goal, 2, { placeholder: t('goalPlaceholder') });
+  const briefEdit = briefInput(c.brief ?? '');
   const lang = h('select', {}, LANGS.map((l) => h('option', { value: l, selected: c.lang === l }, langLabel(l))));
   const flowName = inp(c.flowName), sys = area(c.flow.system, 3), exp = area(c.flow.expand, 3), comb = area(c.flow.combine, 3);
   const tplSel = h('select', {}, S.templates.map((x) => h('option', { value: x.id }, localName(x.name))));
@@ -704,7 +767,9 @@ async function boardSettingsDialog() {
   const models = Object.fromEntries(ROLES.map((r) => [r, inp(c.models?.[r] ?? '', { placeholder: S.settings.models[r], list: 'model-list' })]));
 
   const dlg = dialog('dlg', t('boardSettings'), [
-    h('fieldset', {}, h('legend', {}, t('general')), field(t('title'), title), field(t('goal'), goal), field(t('language'), lang)),
+    h('fieldset', {}, h('legend', {}, t('general')), field(t('title'), title),
+      field(t('boardKind'), h('input', { value: kindName(kindOf(b), getLang()), disabled: true }), t('kindFixed')),
+      field(t('goal'), goal), field(t('brief'), briefEdit, t('briefNote')), field(t('language'), lang)),
     h('fieldset', {}, h('legend', {}, t('flow')),
       h('div', { class: 'row' }, tplSel, h('button', {
         class: 'btn small', type: 'button',
@@ -775,7 +840,7 @@ async function boardSettingsDialog() {
         const board = await patchBoard({
           title: title.value, goal: goal.value,
           config: {
-            lang: lang.value, flowName: flowName.value, flow: { system: sys.value, expand: exp.value, combine: comb.value },
+            lang: lang.value, brief: briefEdit.value, flowName: flowName.value, flow: { system: sys.value, expand: exp.value, combine: comb.value },
             judgeGuidance: guidance.value, autoProjectOnGold: autoProj.checked,
             researchers: { x: { enabled: xOn.checked, focus: xFocus.value }, research: { enabled: rOn.checked, focus: rFocus.value } },
             mode: mode.value, autopilotSeconds: Number(pace.value), rate: { stepsPerHour: Number(sph.value), usdPerDay: Number(usd.value) },

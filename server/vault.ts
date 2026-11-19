@@ -9,6 +9,8 @@ import { isAbsolute, join, resolve } from 'node:path';
 import type { Lang } from './llm.ts';
 import { expandHome } from './project.ts';
 import { medal, scoreSum } from '../public/js/score.js';
+import { critLabels, kindOf } from '../public/js/kinds.js';
+import { packOf } from './kinds.ts';
 
 type IdeaLike = {
   id: number; title: string; pitch: string; kind: string; generation: number; sourceUrl?: string | null;
@@ -56,8 +58,11 @@ export function toTag(k: string) {
 
 const q = (s: string) => JSON.stringify(s); // a JSON string is a valid double-quoted YAML string
 
-export function renderNote(a: { idea: IdeaLike; board: { title: string; goal: string }; parents: IdeaLike[]; lang: Lang; date: string }) {
-  const t = L[a.lang];
+export function renderNote(a: { idea: IdeaLike; board: { title: string; goal: string; config?: { kind?: string } }; parents: IdeaLike[]; lang: Lang; date: string }) {
+  const kind = kindOf(a.board);
+  const [lo, lf, li] = critLabels(kind, a.lang);
+  const [ko, kf, ki] = packOf(kind).criteria;
+  const t = { ...L[a.lang], o: lo, f: lf, i: li };
   const i = a.idea;
   const sum = scoreSum(i);
   const m = medal(i);
@@ -67,9 +72,10 @@ export function renderNote(a: { idea: IdeaLike; board: { title: string; goal: st
     `idea_id: ${i.id}`,
     `board: ${q(a.board.title)}`,
     `kind: ${i.kind}`,
+    ...(kind !== 'ideas' ? [`board_kind: ${kind}`] : []),
     `generation: ${i.generation}`,
     ...(sum != null
-      ? [`originality: ${i.originality}`, `feasibility: ${i.feasibility}`, `impact: ${i.impact}`, `score: ${sum}`]
+      ? [`${ko}: ${i.originality}`, `${kf}: ${i.feasibility}`, `${ki}: ${i.impact}`, `score: ${sum}`]
       : []),
     ...(m ? [`medal: ${MEDAL_NAME[m]}`] : []),
     ...(i.sourceUrl ? [`source: ${q(i.sourceUrl)}`] : []),
@@ -85,10 +91,10 @@ export function renderNote(a: { idea: IdeaLike; board: { title: string; goal: st
     if (i.reason) body.push(`> ${i.reason}`, '');
   } else body.push(t.unjudged, '');
   body.push(`## ${t.origin}`, '');
-  const kind = t.kinds[i.kind] ?? i.kind;
-  if (a.parents.length) body.push(`${kind}:`, ...a.parents.map((p) => `- [[${noteName(p.title)}]]`), '');
+  const how = t.kinds[i.kind] ?? i.kind;
+  if (a.parents.length) body.push(`${how}:`, ...a.parents.map((p) => `- [[${noteName(p.title)}]]`), '');
   else if (i.kind === 'guest' && i.originBoardTitle) body.push(`${t.guest} ${i.originBoardTitle}`, '');
-  else body.push(kind, '');
+  else body.push(how, '');
   if (i.sourceUrl) body.push(`${t.source}: ${i.sourceUrl}`, '');
   if (a.board.goal.trim()) body.push(`## ${t.goal}`, '', a.board.goal.trim(), '');
   return [...props, '', ...body].join('\n');

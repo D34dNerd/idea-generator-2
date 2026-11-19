@@ -5,6 +5,7 @@
 // a new board's flow; editing a board never changes another board.
 import { DatabaseSync } from 'node:sqlite';
 import { toLang, type Lang } from './llm.ts';
+import { packOf, toKind, type Kind } from './kinds.ts';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS templates (
@@ -140,6 +141,10 @@ export type Flow = { system: string; expand: string; combine: string };
 const MODEL_ROLES = ['distill', 'expand', 'combine', 'judge', 'summary', 'research', 'x', 'brief'] as const;
 
 export type BoardConfig = {
+  /** What the board makes (kinds.ts): it picks the jury's rubric and the shape of an idea. Fixed when the board is created. */
+  kind: Kind;
+  /** Who the board works for, in its owner's words (who we are, what we do, for whom, in what voice). Posts and videos need it. */
+  brief: string;
   flowName: string;
   flow: Flow;
   judgeGuidance: string;
@@ -156,17 +161,23 @@ export type BoardConfig = {
   models: Partial<Record<(typeof MODEL_ROLES)[number], string>>;
 };
 
-export function defaultConfig(template = DEFAULT_TEMPLATES[0]): BoardConfig {
+/** A kind with its own generators ignores the template: the template's prompts are written for 'ideas'. */
+export function defaultConfig(template = DEFAULT_TEMPLATES[0], kind: Kind = 'ideas'): BoardConfig {
+  const own = packOf(kind).flow;
+  const flow = own ?? template;
   return {
-    flowName: template.name,
-    flow: { system: template.system, expand: template.expand, combine: template.combine },
+    kind,
+    brief: '',
+    flowName: flow.name,
+    flow: { system: flow.system, expand: flow.expand, combine: flow.combine },
     judgeGuidance: '',
     researchers: { x: { enabled: true, focus: '' }, research: { enabled: true, focus: '' } },
     lang: 'sv',
     mode: 'manual',
     autopilotSeconds: 10,
     rate: { stepsPerHour: 60, usdPerDay: 1 },
-    autoProjectOnGold: true,
+    // A Claude Code project fits an idea to build; a niche, a post or a video is not one.
+    autoProjectOnGold: kind === 'ideas',
     models: {},
   };
 }
@@ -191,6 +202,8 @@ export function mergeConfig(base: BoardConfig, raw: any): BoardConfig {
     }
   }
   return {
+    kind: r.kind === undefined ? base.kind : toKind(r.kind),
+    brief: s(r.brief, 4000, base.brief),
     flowName: nonEmpty(r.flowName, 80, base.flowName),
     flow: {
       system: nonEmpty(r.flow?.system, 4000, base.flow.system),
@@ -381,9 +394,11 @@ export function openDb(file: string) {
       const r = db.prepare(`${BOARD_SELECT} WHERE b.id = ?`).get(id);
       return r ? boardFromRow(r) : null;
     },
-    createBoard(b: { title: string; goal?: string; templateId?: number | null; config?: unknown; originIdeaId?: number | null }): Board {
+    createBoard(b: { title: string; goal?: string; templateId?: number | null; kind?: unknown; config?: unknown; originIdeaId?: number | null }): Board {
       const template = repo.getTemplate(b.templateId ?? null);
-      const config = mergeConfig(defaultConfig(template), b.config);
+      const kind = toKind(b.kind);
+      const raw = b.config && typeof b.config === 'object' ? (b.config as Record<string, unknown>) : {};
+      const config = mergeConfig(defaultConfig(template, kind), { ...raw, kind });
       const { lastInsertRowid } = db
         .prepare('INSERT INTO boards (title, goal, config, origin_idea_id) VALUES (?, ?, ?, ?)')
         .run(b.title, b.goal ?? '', JSON.stringify(config), b.originIdeaId ?? null);
@@ -392,7 +407,9 @@ export function openDb(file: string) {
     updateBoard(id: number, patch: { title?: string; goal?: string; config?: unknown }) {
       const cur = repo.getBoard(id);
       if (!cur) return null;
-      const config = patch.config === undefined ? cur.config : mergeConfig(cur.config, patch.config);
+      // The kind stays what the board was made as: its ideas were judged on that kind's rubric.
+      const raw = patch.config && typeof patch.config === 'object' ? (patch.config as Record<string, unknown>) : {};
+      const config = patch.config === undefined ? cur.config : mergeConfig(cur.config, { ...raw, kind: cur.config.kind });
       db.prepare(`UPDATE boards SET title = ?, goal = ?, config = ?, updated_at = datetime('now') WHERE id = ?`).run(
         patch.title ?? cur.title,
         patch.goal ?? cur.goal,

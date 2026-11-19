@@ -5,8 +5,8 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 ## Commands
 
 - `npm start` – server on http://localhost:8300 (`PORT`, `HOST`, `DB_FILE` override)
-- `npm test` – 87 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
-- `npm run calibrate [-- --model provider:model]` – real judge against weak and strong reference ideas, single and in mixed batches of three, plus goal fit. It costs money. **Re-run it whenever the judge's prompt, schema or model changes.**
+- `npm test` – 96 tests (`node --test`), fake LLM, fake provider servers and fake CLIs, no network
+- `npm run calibrate [-- --model provider:model]` – real judge against weak and strong reference ideas, single and in mixed batches of three, plus goal fit. It costs money. **Re-run it whenever the judge's prompt, schema or model changes.** `--kind niche|post|video` calibrates that board kind's judge against its own references (posts and videos are judged for a fixed brief).
 - `npm run benchmark -- --gen agy:<model> --judge claudecode:sonnet [--steps 20] [--label "…"]` – a fixed reference board (same goal and seed) run for N autopilot steps with real models. Prints mean per generation, medals, goal-fit share and diversity, appends to `data/benchmarks.jsonl` with the commit, and compares with the last run on the same goal. **Run it before and after any change to prompts or evolution**: a change that does not move these numbers did not help.
 
 ## Layout
@@ -17,7 +17,8 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
   - `agy:` and `claudecode:` are subscription CLIs run headless (`server/cli.ts`).
   - Everything else is OpenAI-compatible.
 - `server/cli.ts` – one process per call for `agy -p` and `claude -p`, in an empty temp folder.
-- `server/llm.ts` – every prompt, including the judge (`JUDGE_SYSTEM`). Each function takes `model`.
+- `server/kinds.ts` – the board kinds (ideas, niche, post, video): each kind's judge rubric, pitch shape, jury summary for generators and generator flow. `public/js/kinds.js` holds the kind list and the criteria's display names.
+- `server/llm.ts` – every prompt. The judge and the schemas come from the board's kind. Each function takes `model`.
 - `server/engine.ts` – every operation, the background judge queue (max 3) and the per-board event bus.
 - `server/autopilot.ts` – the scheduler and the pure `rateCheck()`.
 - `server/leads.ts` – the X and research scouts.
@@ -31,6 +32,12 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
 - `public/js/dashboard.js` and `public/js/report.js` – the trends and report views.
 
 ## Rules that matter
+
+- **A board has a kind, fixed at creation** (`config.kind`: `ideas`, `niche`, `post`, `video`; old boards are `ideas`). The skeleton is shared: three criteria 1–5 stored in the slots `originality`, `feasibility`, `impact`, goal fit, medals from the sum. What each slot means is the kind's: niche = gap, access, demand; post = hook, value, doability; video = hook, payoff, doability. The model sees the kind's own names (the schema's keys), and `toJudgement` maps them to the slots. `mergeConfig` never changes the kind of an existing board.
+- **The `ideas` kind is the original app, byte for byte.** Its judge (`JUDGE_SYSTEM`) and schemas are the calibrated ones; a capture of every request on an idea board must stay identical. The other kinds' judges are written in the same pattern (anchors for 1, 3 and 5, then rules, then goal fit) and each has its own calibration references.
+- **Posts and videos are made for someone:** `config.brief` (who we are, what we do, for whom, in what voice) goes into every generator and judge prompt when it is set; the UI requires it for those kinds. An empty brief adds nothing.
+- **Refinement follows the kind:** each kind has its own pre-mortem (`refine` in `kinds.ts`): a niche fails because nobody pays or nobody can be reached, a post because nobody stops scrolling, a video because people leave in the first three seconds. The `ideas` wording is the original.
+- **A spin-off can change kind** (a niche into posts, a post into videos): the idea becomes the new board's goal, the brief carries over, and its first seed is the idea rewritten by `distill` in the new kind's shape, so the new jury judges a post, not a niche. If that call fails, the idea itself is the seed.
 
 - **The medal comes from code, not the model:** a sum of three 1–5 scores, bronze from 9, silver from 11, gold from 13 (`score.js`). Left uncalibrated, an LLM jury gave 3/3 to the bare word "fire"; the calibration test keeps that from happening here.
 - **Goal fit gates the medal.** The judge also scores `fit` 1–5 (how directly the idea serves the board's goal; with no goal, the board's first seed stands in). Below 3 (`FIT_MIN`, `onGoal` in `score.js`) an idea gets no medal and is left out of `population`, so it is never bred; seeds and hand-set medals are exempt. It does not change the 3–15 sum or the thresholds. A model that leaves `fit` out gives `null`, which counts as on the goal. Stagnation counts off-goal ideas as attempts but never as the best.
@@ -77,4 +84,9 @@ Node 25 runs the TypeScript server directly; the frontend is vanilla ES modules.
   - batches of three, weak and strong mixed: weak 4.3, strong 10.1, 16 of 16 verdicts
   - goal fit: on-goal 5; off-goal 1 and 2
 - **Benchmark baseline** (2026-11-12, `agy:gemini-3.8-flash-high` + `claudecode:sonnet`, default goal and seed): 29 ideas in 39 min, mean 8.31, first half 8.6 → second half 8.0, best 11, medals 8/1/0, on goal 90 %, nearest similarity 0.15. Stopped `exhausted` at step 18. The best ideas came from the first generation: breeding kept the board on its subject and varied, but did not raise quality. agy took 84–202 s per step, so its timeout is 300 s (one 180 s timeout in that run).
+- **Board kinds calibrated** (2026-11-19, `claudecode:sonnet`, `npm run calibrate -- --kind <kind>`): all PASS.
+  - niche: weak mean 4.8, max 5; strong mean 8.9 (bronze 10 of 12, no gold); batches weak 4.3, strong 10.0; fit on-goal 4, off-goal 1 and 1. The judge assumes a niche is served unless it cannot name an offer, so gap is usually 2–3.
+  - post (fixed brief: a solo software consultant for small workshops): weak mean 6.4, max 7 (doability keeps generic posts at 6–7); strong mean 11.2 (silver 10 of 10); batches weak 6.4, strong 11.8; fit 5 vs 1 and 1.
+  - video (same brief): weak mean 6.0, max 7; strong mean 9.9; batches weak 5.9, strong 11.3; fit 5 vs 1 and 1.
+  - One live expansion per kind, judged: niches 9, 10, 8; posts 12, 11, 12; videos 11, 9, 11. Generators named people, places and offers (niches), exact hooks and formats (posts), the first three seconds and beats (videos).
 - **Providers tested live:** OpenRouter, OpenAI and Ollama (generation and model listing). Not yet tested against the live services: Azure / Microsoft Foundry, MLX, LM Studio, and Anthropic direct (only against a fake server). GitHub Models was removed: GitHub retired it on 30 July 2026 (every endpoint now answers a bare `200 OK`). Use the Test button in Settings.

@@ -4,16 +4,18 @@
 //   npm run calibrate
 //   npm run calibrate -- --model anthropic:claude-haiku-5-5
 //   npm run calibrate -- --model ollama:qwen3:8b
+//   npm run calibrate -- --kind niche          (each board kind has its own rubric and references)
 // Re-run it whenever you point the judge at a different model.
 //
 // The weak set includes bare topics ("fire", "electric cars") that an
 // uncalibrated LLM judge rated 3/3 "gold". This judge must not.
 
 import { makeLLM } from '../server/llm.ts';
+import { packOf, toKind } from '../server/kinds.ts';
 import { DEFAULT_APP_SETTINGS, makeChat } from '../server/providers.ts';
 import { medalFromSum } from '../public/js/score.js';
 
-const WEAK = [
+const IDEAS_WEAK = [
   'fire',
   'Electric cars',
   'En app för att hitta nya vänner',
@@ -24,7 +26,7 @@ const WEAK = [
   'Usar blockchain na educação',
 ];
 
-const STRONG = [
+const IDEAS_STRONG = [
   'Reservdelsbibliotek: Folkbiblioteken 3D-skannar och skriver ut trasiga plastdetaljer till hushållsapparater på beställning, så att en bruten lucka inte gör att en fungerande diskmaskin kasseras.',
   'Elmätaren som anhöriglarm: En billig sensor på elmätaren känner igen apparaters strömsignaturer och skickar sms till anhöriga när en äldre persons morgonrutin med vattenkokare och kaffebryggare uteblir.',
   'Skolbussen som paketbil: Landsbygdens skolbussar tar paket och apotekspåsar i ett låst bagageutrymme mellan morgon- och eftermiddagsturen, så att glesbygden får dagliga leveranser utan nya fordon.',
@@ -36,21 +38,118 @@ const STRONG = [
 
 // Goal fit: the same board goal, one idea squarely on it and good ideas that drifted off it.
 // A real board meant for AR assembly guides ended, ten generations later, on bread.
-const FIT_GOAL = 'Guias de montagem em realidade aumentada que uma pessoa usa sozinha em casa';
-const ON_GOAL = [
+const IDEAS_FIT_GOAL = 'Guias de montagem em realidade aumentada que uma pessoa usa sozinha em casa';
+const IDEAS_ON_GOAL = [
   'Guia RA que confere cada passo: o celular compara a foto da peça montada com o modelo 3D do manual e só libera o próximo passo quando a peça certa está no lugar, evitando desmontar o móvel inteiro no fim.',
 ];
-const OFF_GOAL = [
+const IDEAS_OFF_GOAL = [
   'Cronômetro de corte para pães: a câmera do celular mede quanto a massa volta ao ser pressionada e avisa o momento exato de cortar e levar ao forno.',
   'Sequenciador térmico para soldagem: um script lê o projeto da placa no KiCad e ordena os pontos de solda para que nenhuma região aqueça duas vezes seguidas.',
 ];
+
+// Niches: categories and demographics must earn no medal; narrow, painful, reachable groups must.
+const NICHE_WEAK = [
+  'Pet shops',
+  'Pessoas que querem emagrecer',
+  'Pequenas empresas que precisam de marketing',
+  'Small businesses that need a website',
+  'Um app de IA para criadores de conteúdo',
+  'Mães que trabalham em casa',
+  'Investidores iniciantes',
+  'Fitness for busy people',
+];
+const NICHE_STRONG = [
+  'Oficinas de moto sem controle de estoque: oficinas de bairro com 1 a 3 mecânicos perdem vendas porque não sabem se têm a peça e ligam para três distribuidores a cada orçamento. Estão todas nos grupos de WhatsApp dos distribuidores regionais. Oferta: estoque por foto, mantido pelo atendente, por R$ 79 ao mês.',
+  'Contadores de MEIs entregadores: escritórios contábeis pequenos com mais de 200 MEIs de aplicativos de entrega refazem à mão a guia de quem atrasou o DAS e perdem dias todo começo de mês. Estão nos cursos e grupos do conselho regional. Oferta: lembrete por WhatsApp com a guia pronta, cobrado do escritório por cliente.',
+  'Síndicos profissionais de 10 a 30 prédios: a cada assembleia montam a prestação de contas juntando extratos e notas em PDF e pagam um assistente só para isso. Estão nas associações de síndicos e nos cursos de gestão condominial. Oferta: relatório de assembleia gerado a partir do extrato, R$ 15 por prédio ao mês.',
+  'Independent physiotherapists renting rooms by the hour: they lose two or three paid slots a week to no-shows because booking is a WhatsApp chat, and the room owner still charges them. They meet in the same rental buildings and in CPD courses. Offer: a deposit-backed booking link, 3% per paid session.',
+  'Small-batch hot sauce makers at farmers markets: every recipe change means a new nutrition label, and a lab charges them about 150 euros each time. They gather in maker groups and on market organisers\' mailing lists. Offer: a label calculator from the recipe, checked against the official food table, 9 euros per label.',
+  'Marmorarias que orçam pia por telefone: marmorarias com até 5 funcionários perdem uma visita técnica por orçamento porque o cliente mede errado; gastam meio dia de carro para medir. Compram todas dos mesmos três atacadistas de chapas da região. Oferta: medição por fotos com uma régua impressa, R$ 120 ao mês.',
+];
+const NICHE_FIT_GOAL = 'Nichos B2B que um consultor de software sozinho, em Santa Catarina, possa atender com pouco dinheiro';
+const NICHE_ON_GOAL = [
+  'Marmorarias catarinenses que orçam à mão: marmorarias com até 5 funcionários refazem orçamentos em papel e perdem visitas técnicas por medidas erradas. Compram dos mesmos atacadistas de chapas da região. Oferta: sistema simples de orçamento por fotos, R$ 120 ao mês.',
+];
+const NICHE_OFF_GOAL = [
+  'Tutores de cães idosos: donos de cães com mais de 12 anos gastam com remédios caros e não sabem dosar em casa. Estão em grupos de tutores no Instagram. Oferta: caixinha de doses semanais por assinatura.',
+  'Turistas argentinos no verão de Florianópolis: perdem tempo procurando praias sem fila e restaurantes que aceitam peso. Estão em grupos de viagem do Facebook. Oferta: guia diário pago por WhatsApp.',
+];
+
+// Posts and videos are judged for someone: every reference is for this brief.
+const CONTENT_BRIEF =
+  'Consultor de software sozinho em Florianópolis. Monta sistemas simples (planilhas, WhatsApp, pequenos apps) para oficinas mecânicas e pequenos comércios da Grande Florianópolis. Fala direto, sem jargão, com casos reais de clientes.';
+
+const POST_WEAK = [
+  'Post sobre produtividade',
+  '5 dicas para usar melhor a tecnologia na sua empresa',
+  'Você sabia que a tecnologia pode ajudar o seu negócio?',
+  'Post de bom dia motivacional',
+  'Carrossel sobre transformação digital',
+  'Reel mostrando o nosso escritório',
+  'Top 10 tools for small business',
+  'Post: comente SIM se você quer crescer',
+];
+const POST_STRONG = [
+  'Carrossel "A peça estava na prateleira": gancho "Seu mecânico disse que não tinha a peça. Ela estava na prateleira de cima." Em 5 telas, o caso real de uma oficina de Palhoça que perdeu 3 vendas numa semana com estoque de cabeça, e a planilha de 20 minutos que resolveu. Chamada: mande para um dono de oficina que você conhece.',
+  'Reel de 30 s "Orçamento em 2 minutos": abre com um cronômetro na tela e a frase "Cliente no balcão: quanto tempo você leva para dar o preço?". Eu monto no celular o orçamento de uma troca de embreagem com a tabela da oficina. Chamada: comente "tabela" que eu mando o modelo.',
+  'Post estático "O erro que custa R$ 800 por mês": o número em letras grandes; três linhas explicam que a oficina que não anota a garantia das peças paga o retrabalho do próprio bolso, e o que anotar em cada nota de compra. Chamada: salve para a próxima compra de peças.',
+  'Thread "Por que recusei vender um sistema de R$ 30 mil para uma oficina de 2 pessoas": a primeira linha é a frase; em 6 posts conto o que a oficina realmente precisava (uma planilha e um grupo de WhatsApp), quanto custou e o resultado em 60 dias. Chamada: responda com o tamanho da sua oficina.',
+  'Story em 4 telas "Adivinhe o prejuízo": enquete com 3 valores de quanto uma oficina perde por mês com o cliente que não volta para a revisão; na tela seguinte, a conta com os números de um cliente meu e o lembrete por WhatsApp que trouxe 12 clientes de volta.',
+];
+const POST_FIT_GOAL = 'Posts que tragam donos de oficinas mecânicas para a consultoria';
+const POST_ON_GOAL = [
+  'Carrossel "Quanto custa o cliente que não volta?": gancho com o valor que uma oficina de Biguaçu perdia por mês em revisões esquecidas; em 4 telas, o lembrete por WhatsApp que montei para ela e quantos clientes voltaram. Chamada: mande "revisão" no direct.',
+];
+const POST_OFF_GOAL = [
+  'Carrossel "Pão de fermentação natural em 3 passos": gancho "Seu pão não cresce por causa da água, não do fermento". Mostra a temperatura certa, o tempo de descanso e o teste do dedo. Chamada: salve para o fim de semana.',
+  'Reel "Minha rotina de academia às 5h": abre com o despertador tocando; mostro o treino de 40 minutos e o café da manhã. Chamada: comente o seu horário de treino.',
+];
+
+const VIDEO_WEAK = [
+  'Vídeo sobre tecnologia',
+  'Vídeo institucional da empresa',
+  'Olá pessoal, hoje vou falar sobre gestão',
+  'Vídeo com dicas de produtividade',
+  'Vlog do meu dia',
+  'Video about AI tools',
+  'Tutorial de Excel',
+  'Vídeo motivacional para empreendedores',
+];
+const VIDEO_STRONG = [
+  'Short de 45 s "Achei R$ 2.300 parados na prateleira": abre comigo segurando uma caixa de peças empoeirada e dizendo o valor. Beats: contamos com o celular o estoque parado de uma oficina de Palhoça em 10 minutos, mostro a planilha, revelo o total e o que o dono fez com as peças. Final: "quer a planilha? comenta estoque".',
+  'Vídeo longo de 12 min "Montei o sistema de uma oficina com R$ 0 em uma tarde": os 3 primeiros segundos mostram o resultado no celular do mecânico. Capítulos: o problema (cliente perdido), a montagem com planilha e WhatsApp, o teste ao vivo com um cliente real e os números depois de 30 dias. Final: link do modelo.',
+  'Short de 30 s "Teste: quanto tempo para dar um orçamento?": abre com um cronômetro e "cliente no balcão, valendo!". Beats: o dono da oficina tenta pelo caderno (3 min), depois pela tabela no celular (40 s), corte para a cara dele. Final: "a tabela está no link".',
+  'Short de 50 s "O erro que me fez perder um cliente de R$ 15 mil": abro dizendo o valor, olhando para a câmera. Beats: o que prometi, onde errei (sem escopo escrito), o que faço hoje, e o documento de uma página na tela. Final: "salva para não cair nessa".',
+  'Vídeo de 8 min "Reagindo ao sistema de R$ 30 mil que venderam para uma oficina": os 3 primeiros segundos mostram a tela confusa e o preço. Beats: aponto 3 telas que ninguém usa, mostro a alternativa simples ao lado e o dono conta quanto pagaria por ela. Final: pergunta nos comentários sobre o sistema de cada um.',
+];
+const VIDEO_FIT_GOAL = 'Vídeos que tragam donos de oficinas mecânicas para a consultoria';
+const VIDEO_ON_GOAL = [
+  'Short de 40 s "Cliente sumido, cliente de volta": abre com a tela do WhatsApp recebendo "posso trazer o carro amanhã?". Beats: a lista de revisões vencidas de uma oficina de São José, o lembrete automático que montei, quantos voltaram no mês. Final: "comenta revisão que eu mostro como".',
+];
+const VIDEO_OFF_GOAL = [
+  'Short de 40 s "Pão de fermentação natural em 3 passos": abre com o pão murcho ao lado do pão crescido. Beats: a temperatura da água, o descanso, o teste do dedo. Final: "salva para o domingo".',
+  'Vídeo de 10 min "Minha viagem ao Paraguai de moto": abre com a moto na ponte da Amizade. Capítulos: a estrada, a fronteira, as compras e quanto gastei. Final: pergunta qual viagem fazer depois.',
+];
+
+const REFS = {
+  ideas: { weak: IDEAS_WEAK, strong: IDEAS_STRONG, fitGoal: IDEAS_FIT_GOAL, on: IDEAS_ON_GOAL, off: IDEAS_OFF_GOAL, brief: '' },
+  niche: { weak: NICHE_WEAK, strong: NICHE_STRONG, fitGoal: NICHE_FIT_GOAL, on: NICHE_ON_GOAL, off: NICHE_OFF_GOAL, brief: '' },
+  post: { weak: POST_WEAK, strong: POST_STRONG, fitGoal: POST_FIT_GOAL, on: POST_ON_GOAL, off: POST_OFF_GOAL, brief: CONTENT_BRIEF },
+  video: { weak: VIDEO_WEAK, strong: VIDEO_STRONG, fitGoal: VIDEO_FIT_GOAL, on: VIDEO_ON_GOAL, off: VIDEO_OFF_GOAL, brief: CONTENT_BRIEF },
+} as const;
+const kindArg = process.argv.indexOf('--kind');
+const kind = toKind(kindArg > 0 ? process.argv[kindArg + 1] : 'ideas');
+if (!(kind in REFS)) throw new Error(`No calibration references for kind "${kind}" yet`);
+const ref = REFS[kind as keyof typeof REFS];
+const WEAK = ref.weak, STRONG = ref.strong, FIT_GOAL = ref.fitGoal, ON_GOAL = ref.on, OFF_GOAL = ref.off;
+const [C1, C2, C3] = packOf(kind).criteria.map((c) => c[0].toUpperCase());
 
 const modelArg = process.argv.indexOf('--model');
 const model = modelArg > 0 ? process.argv[modelArg + 1] : DEFAULT_APP_SETTINGS.models.judge;
 const RUNS = 2;
 
 const llm = makeLLM(makeChat(() => DEFAULT_APP_SETTINGS));
-const board = { goal: '' };
+const board = { goal: '', config: { kind, brief: ref.brief } };
 const asIdea = (text: string) => {
   const [title, ...rest] = text.split(': ');
   return rest.length ? { title, pitch: rest.join(': ') } : { title: text, pitch: '' };
@@ -71,7 +170,7 @@ async function judgeAll(texts: string[]) {
   );
 }
 
-console.log(`Judge model: ${model}, ${RUNS} runs per idea\n`);
+console.log(`Judge model: ${model}, kind: ${kind}, ${RUNS} runs per idea\n`);
 const [weak, strong] = await Promise.all([judgeAll(WEAK), judgeAll(STRONG)]);
 const MEDAL = ['–', '🥉', '🥈', '🥇'];
 for (const [label, rows] of [['WEAK', weak], ['STRONG', strong]] as const) {
@@ -80,7 +179,7 @@ for (const [label, rows] of [['WEAK', weak], ['STRONG', strong]] as const) {
     const j = r.runs[0];
     console.log(
       `  ${r.sums.map((s) => String(s).padStart(2)).join(' ')}  ${r.sums.map((s) => MEDAL[medalFromSum(s)!]).join('')}  ` +
-        `O${j.originality} F${j.feasibility} I${j.impact}  ${r.text.slice(0, 48)}`,
+        `${C1}${j.originality} ${C2}${j.feasibility} ${C3}${j.impact}  ${r.text.slice(0, 48)}`,
     );
     console.log(`        ↳ ${j.reason}`);
   }
@@ -94,13 +193,13 @@ const spread = Math.max(...[...weak, ...strong].map((r) => Math.max(...r.sums) -
 
 const fitRuns = async (texts: string[]) =>
   Promise.all(texts.map(async (text) => {
-    const { judgement, costUsd } = await llm.judge({ model, board: { goal: FIT_GOAL }, idea: asIdea(text), lang: 'pt' });
+    const { judgement, costUsd } = await llm.judge({ model, board: { goal: FIT_GOAL, config: { kind, brief: ref.brief } }, idea: asIdea(text), lang: 'pt' });
     cost += costUsd;
     return { text, fit: judgement.fit, j: judgement };
   }));
 const [on, off] = await Promise.all([fitRuns(ON_GOAL), fitRuns(OFF_GOAL)]);
 console.log(`GOAL FIT (goal: ${FIT_GOAL})`);
-for (const r of [...on, ...off]) console.log(`  fit ${r.fit ?? '?'}  O${r.j.originality} F${r.j.feasibility} I${r.j.impact}  ${r.text.slice(0, 60)}`);
+for (const r of [...on, ...off]) console.log(`  fit ${r.fit ?? '?'}  ${C1}${r.j.originality} ${C2}${r.j.feasibility} ${C3}${r.j.impact}  ${r.text.slice(0, 60)}`);
 
 console.log(`\nweak mean ${mean(weak).toFixed(1)}, max ${weakMax} · strong mean ${mean(strong).toFixed(1)} · gap ${gap.toFixed(1)}`);
 console.log(`strong ideas reaching gold: ${strongGold} of ${strong.length * RUNS} · largest run-to-run spread: ${spread}`);
