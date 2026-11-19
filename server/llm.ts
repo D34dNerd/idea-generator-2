@@ -101,6 +101,18 @@ const judgeSchema = (k: KindPack) => ({
   additionalProperties: false,
 });
 
+// Pre-mortem first: imagine the failure, then rewrite against its most likely cause.
+const refineSchema = (k: KindPack) => ({
+  type: 'object',
+  properties: {
+    premortem: { type: 'array', description: k.refine.schema, items: { type: 'string' } },
+    fix: { type: 'string', description: 'One sentence: what changes in what actually happens, so the most likely reason cannot occur.' },
+    ...pitchProps(k),
+  },
+  required: ['premortem', 'fix', 'title', 'pitch'],
+  additionalProperties: false,
+});
+
 // Several ideas in one call: each item is a full judgement, tagged with the idea's number.
 const judgeManySchema = (k: KindPack) => {
   const one = judgeSchema(k);
@@ -343,6 +355,33 @@ export function makeLLM(chat: ChatFn) {
       const idea = tidy(value);
       if (!idea.title) throw new Error('The model returned no idea');
       return { idea, costUsd };
+    },
+
+    /**
+     * The idea, rewritten after a pre-mortem: why would it have failed a year from now, and what
+     * must change in what actually happens so the most likely cause cannot occur. One directed
+     * step on a strong idea, where expand and combine take random ones.
+     */
+    async refine(a: { model: string; flow: Flow; board: BoardCtx; idea: Pitch; verdict: Verdict | null; existingTitles: string[]; lang: Lang; jury?: JuryNotes }) {
+      const k = packFor(a.board);
+      const r = k.refine;
+      const user = [
+        `The ${k.noun}:\n${fmtIdea(a.idea)}`,
+        a.verdict ? `The jury's verdict: ${fmtVerdict(a.verdict, k)}` : '',
+        `Run a pre-mortem. ${r.setup} Write the three most likely reasons, most likely first: ${r.reasons}. Use the jury's objection if it is one of them.`,
+        `Then rewrite the ${k.noun} so that the most likely reason cannot happen. ${r.change}, not the wording. ` +
+          `Keep what the jury credited, keep it the same ${k.noun} at heart and on the board's goal, and keep it as concrete: ${r.keep}.`,
+        context(a.board, a.existingTitles),
+        juryBrief(k, a.jury),
+        languageRule(a.lang),
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      const { value, costUsd } = await gen(a.model, a.flow.system, user, 'refine', refineSchema(k), 1500);
+      const idea = tidy(value);
+      if (!idea.title) throw new Error('The model returned no idea');
+      const premortem = (Array.isArray(value?.premortem) ? value.premortem : []).map((x: unknown) => String(x).trim()).filter(Boolean).slice(0, 3);
+      return { idea, premortem, fix: String(value?.fix ?? '').trim(), costUsd };
     },
 
     /** Turn a long text or a fetched web page into one seed idea. */

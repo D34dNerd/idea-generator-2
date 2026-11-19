@@ -26,6 +26,8 @@ export type KindPack = {
   juryLine: string;
   /** The generators' flow for a new board of this kind; null: the board's template decides ('ideas'). */
   flow: { name: string } & Flow | null;
+  /** The pre-mortem that refines a strong item (llm.refine): how it fails, what may change, what must stay concrete. */
+  refine: { schema: string; setup: string; reasons: string; change: string; keep: string };
 };
 
 export const toKind = (v: unknown): Kind => (KINDS.includes(v as string) ? (v as Kind) : 'ideas');
@@ -74,6 +76,13 @@ const IDEAS: KindPack = {
     'It gives 1–2 to bare topics, to anything vague about what actually happens, and to an idea that rewords one already on the board. ' +
     'It rewards a specific, non-obvious mechanism that could be piloted within months and that matters for the goal.',
   flow: null,
+  refine: {
+    schema: 'It is a year later and the idea failed. The three most likely reasons, most likely first, each one concrete sentence.',
+    setup: 'It is a year from now and this idea, built as written, has failed.',
+    reasons: 'who did not use or pay for it and why, what did not work in practice, what someone else already did better',
+    change: 'Change what actually happens (the user, the mechanism, the channel or the first test)',
+    keep: 'name who, what happens, and the first small test',
+  },
 };
 
 // ---------------------------------------------------------------- niche
@@ -124,6 +133,13 @@ const NICHE: KindPack = {
     'How niches are judged here: a strict market analyst scores gap, access and demand, 1–5 each. ' +
     'It gives 1–2 to categories and whole demographics, to anything vague about who exactly has the problem, and to a niche that rewords one already on the board. ' +
     'It rewards a narrow group with a costly problem that current offers ignore, that gathers somewhere you can name, and that already pays for workarounds.',
+  refine: {
+    schema: 'It is a year later and a business built for this niche failed. The three most likely reasons, most likely first, each one concrete sentence.',
+    setup: 'It is a year from now and a small business built for this niche, as written, has failed.',
+    reasons: 'the group was too broad or too small, they would not pay, nobody could reach them, an existing offer already served them',
+    change: 'Change the people, the pain, the channel or the offer',
+    keep: "name the people, the pain, today's workaround, where they are and the offer",
+  },
   flow: {
     name: 'Nicho · Niche',
     system: `You are a market researcher who finds niches for small, bootstrapped businesses. You think in people, not products: who exactly, what costs them money or time every week, what they use today, and where they gather.
@@ -192,6 +208,13 @@ const POST: KindPack = {
     'How posts are judged here: a strict social media editor scores hook, value and doability, 1–5 each. ' +
     'It gives 1–2 to bare topics, generic tips any account could post, openings like "5 tips for", and a post that rewords one already on the board. ' +
     "It rewards an exact first line that names the audience's situation, a takeaway only this account could give, and a post one person can make this week.",
+  refine: {
+    schema: 'A month after it was published, the post did nothing. The three most likely reasons, most likely first, each one concrete sentence.',
+    setup: 'It is a month after this post was published, as written, and it did nothing for the account.',
+    reasons: 'nobody stopped scrolling, they took nothing away, it never got made, another account had already said it better',
+    change: 'Change the hook, the format, the takeaway or the angle',
+    keep: 'name the format, the exact hook, what it delivers and the call to action',
+  },
   flow: {
     name: 'Posts · Posts',
     system: `You are a social media strategist who writes for one specific account: the one in the board's brief. You know its audience, what it sells and how it talks, and you write posts that stop the scroll and leave something useful behind.
@@ -249,6 +272,13 @@ const VIDEO: KindPack = {
     'How videos are judged here: a strict video editor scores hook, payoff and doability, 1–5 each. ' +
     'It gives 1–2 to bare topics, to intros and flat openings, to videos with no beats between the hook and the end, and to a video that rewords one already on the board. ' +
     'It rewards first three seconds that open a question this viewer needs answered, a payoff worth the time, and a video one person with a phone can make.',
+  refine: {
+    schema: 'A month after it was published, the video did nothing. The three most likely reasons, most likely first, each one concrete sentence.',
+    setup: 'It is a month after this video was published, as written, and it did nothing for the channel.',
+    reasons: 'people left in the first three seconds, it dragged before the payoff, it never got made, another channel had already done it better',
+    change: 'Change the first three seconds, the beats, the payoff or the format',
+    keep: 'name the format and length, the first three seconds, the beats and the ending',
+  },
   flow: {
     name: 'Vídeos · Videos',
     system: `You are a video producer who plans videos for one specific channel or account: the one in the board's brief. You know its audience, what it sells and how it talks, and you plan videos that hold people from the first second to a payoff.

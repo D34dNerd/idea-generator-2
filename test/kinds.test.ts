@@ -159,3 +159,18 @@ test('a niche spun off into posts: the niche is the goal, the brief carries over
   assert.ok(requests.slice(before).every((r) => r.schemaName !== 'seed'));
   await engine.idle();
 });
+
+test('a strong niche is refined with a niche pre-mortem, not an idea one', async () => {
+  const { llm, calls } = recorder({ premortem: ['a', 'b', 'c'], fix: 'f', title: 'T', pitch: 'P' });
+  const board = { goal: 'g', config: { kind: 'niche' } };
+  await llm.refine({
+    model: 'm', flow: PACKS.niche.flow!, board, idea: { title: 'I', pitch: 'p' },
+    verdict: { originality: 3, feasibility: 4, impact: 3, fit: 5, reason: 'r' }, existingTitles: [], lang: 'pt', jury: {},
+  });
+  const r = calls[0];
+  assert.match(r.user, /a small business built for this niche/);
+  assert.match(r.user, /gap 3\/5, access 4\/5, demand 3\/5/);
+  assert.doesNotMatch(r.user, /first small test/);
+  assert.equal(r.schema.properties.premortem.description, PACKS.niche.refine.schema);
+  assert.equal(r.schema.properties.pitch.description, PACKS.niche.pitch);
+});
