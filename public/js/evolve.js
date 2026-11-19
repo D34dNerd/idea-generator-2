@@ -157,11 +157,14 @@ export function breeders(pool) {
   return [...pool].sort((a, b) => fitness(b) - fitness(a) || b.id - a.id).slice(0, keep);
 }
 
-/** Ideas that already have expand-children. */
+/** Ideas that already have expand-children (a refined rewrite is not an expansion). */
 export function expandedIds(ideas, edges) {
-  const kindOf = new Map(ideas.map((i) => [i.id, i.kind]));
+  const byId = new Map(ideas.map((i) => [i.id, i]));
   const out = new Set();
-  for (const e of edges) if (kindOf.get(e.to) === 'expand') out.add(e.from);
+  for (const e of edges) {
+    const child = byId.get(e.to);
+    if (child?.kind === 'expand' && child.op !== 'refine') out.add(e.from);
+  }
   return out;
 }
 
@@ -289,4 +292,42 @@ export function rootsOf(ids, edges) {
     queue.push(...ps);
   }
   return [...roots].sort((a, b) => a - b);
+}
+
+/** From this sum (bronze) an idea is worth a pre-mortem and a rewrite. Gold is left alone. */
+export const REFINE_MIN = 9;
+
+/**
+ * The idea to refine next, or null. Crossing keeps a board varied but, measured on the
+ * benchmark board, did not raise quality: the best ideas came from the first generation.
+ * A refinement is a directed step instead: the jury's best on-goal idea gets a pre-mortem
+ * and is rewritten to remove its most likely cause of failure.
+ *
+ * Candidates: among the five fittest on-goal ideas, those from bronze up to below gold
+ * that have not been refined yet. A refined rewrite is refined again only if it beat the
+ * idea it came from, so a chain climbs while it improves and stops when it does not.
+ */
+export function refineTarget(ideas, edges, { skip = new Set(), top = 5 } = {}) {
+  const byId = new Map(ideas.map((i) => [i.id, i]));
+  const refined = new Set();
+  const parentOf = new Map();
+  for (const e of edges) {
+    if (byId.get(e.to)?.op === 'refine') {
+      refined.add(e.from);
+      parentOf.set(e.to, e.from);
+    }
+  }
+  const pool = ideas
+    .filter((i) => fitness(i) != null && onGoal(i))
+    .sort((a, b) => fitness(b) - fitness(a) || b.id - a.id)
+    .slice(0, top);
+  return (
+    pool.find((i) => {
+      const f = fitness(i);
+      if (f < REFINE_MIN || f >= 13 || refined.has(i.id) || skip.has(i.id)) return false;
+      if (i.op !== 'refine') return true;
+      const parent = byId.get(parentOf.get(i.id));
+      return !parent || fitness(parent) == null || f > fitness(parent);
+    }) ?? null
+  );
 }

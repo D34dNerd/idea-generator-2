@@ -267,6 +267,7 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
     // ---- ideas
     ['POST', /^\/api\/boards\/(\d+)\/seed$/, ([id], b) => engine.seed(+id, b)],
     ['POST', /^\/api\/ideas\/(\d+)\/expand$/, ([id]) => engine.expand(+id)],
+    ['POST', /^\/api\/ideas\/(\d+)\/refine$/, ([id]) => engine.refine(+id)],
     ['POST', /^\/api\/boards\/(\d+)\/combine$/, ([id], b) => engine.combine(+id, b.a, b.b)],
     ['POST', /^\/api\/ideas\/(\d+)\/judge$/, ([id]) => engine.judge(+id)],
     ['PATCH', /^\/api\/ideas\/(\d+)$/, ([id], b) => {

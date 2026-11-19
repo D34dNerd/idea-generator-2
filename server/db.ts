@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS ideas (
   feasibility INTEGER,
   impact INTEGER,
   fit INTEGER,
+  op TEXT,
   reason TEXT,
   judged_at TEXT,
   medal_override INTEGER,
@@ -230,6 +231,8 @@ export type Idea = {
   impact: number | null;
   /** How directly the idea serves the board's goal, 1–5 (null: judged before this existed). */
   fit: number | null;
+  /** How a non-seed idea was made, when kind does not say it: 'refine' = its parent rewritten after a pre-mortem (kind 'expand'). */
+  op: string | null;
   reason: string | null;
   judgedAt: string | null;
   medalOverride: number | null;
@@ -281,6 +284,7 @@ const ideaFromRow = (r: any): Idea => ({
   feasibility: r.feasibility,
   impact: r.impact,
   fit: r.fit ?? null,
+  op: r.op ?? null,
   reason: r.reason,
   judgedAt: r.judged_at,
   medalOverride: r.medal_override,
@@ -339,6 +343,7 @@ export function openDb(file: string) {
   // Columns added after the first release: an older ideas.db gets them on open.
   const ideaCols = new Set((db.prepare('PRAGMA table_info(ideas)').all() as any[]).map((c) => c.name));
   if (!ideaCols.has('fit')) db.exec('ALTER TABLE ideas ADD COLUMN fit INTEGER');
+  if (!ideaCols.has('op')) db.exec('ALTER TABLE ideas ADD COLUMN op TEXT');
 
   if ((db.prepare('SELECT COUNT(*) AS n FROM templates').get() as any).n === 0) {
     const ins = db.prepare('INSERT INTO templates (name, system, expand, combine, sort) VALUES (?, ?, ?, ?, ?)');
@@ -426,17 +431,17 @@ export function openDb(file: string) {
     insertIdea(
       i: {
         boardId: number; title: string; pitch: string; kind: Idea['kind']; sourceUrl?: string | null;
-        x: number; y: number; generation: number; originIdeaId?: number | null; originBoardId?: number | null;
+        x: number; y: number; generation: number; originIdeaId?: number | null; originBoardId?: number | null; op?: string | null;
       },
       parentIds: number[] = [],
     ): Idea {
       return tx(() => {
         const { lastInsertRowid } = db
           .prepare(
-            `INSERT INTO ideas (board_id, title, pitch, kind, source_url, x, y, generation, origin_idea_id, origin_board_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO ideas (board_id, title, pitch, kind, source_url, x, y, generation, origin_idea_id, origin_board_id, op)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(i.boardId, i.title, i.pitch, i.kind, i.sourceUrl ?? null, i.x, i.y, i.generation, i.originIdeaId ?? null, i.originBoardId ?? null);
+          .run(i.boardId, i.title, i.pitch, i.kind, i.sourceUrl ?? null, i.x, i.y, i.generation, i.originIdeaId ?? null, i.originBoardId ?? null, i.op ?? null);
         const id = Number(lastInsertRowid);
         const edge = db.prepare('INSERT OR IGNORE INTO edges (board_id, from_id, to_id) VALUES (?, ?, ?)');
         for (const p of parentIds) edge.run(i.boardId, p, id);
