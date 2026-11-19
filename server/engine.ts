@@ -11,6 +11,7 @@ import { asUrl, fetchPage as realFetchPage } from './extract.ts';
 import { fetchPapers as realFetchPapers, researchLeads, xLeads } from './leads.ts';
 import { writeBrief, writeProject } from './project.ts';
 import { writeNote } from './vault.ts';
+import { toKind, type Kind } from './kinds.ts';
 import { ProviderError, type AppSettings, type ChatFn, type Role } from './providers.ts';
 import { fitness, isJudged, medal, onGoal, scoreSum } from '../public/js/score.js';
 import { DUPLICATE_AT, nextMove, overused, pairKey, rootsOf, similarity, stagnation, wordSet } from '../public/js/evolve.js';
@@ -99,6 +100,14 @@ export function createEngine(deps: Deps) {
 
   // ---------------------------------------------------------------- what generators learn from the jury
 
+  /** The goal of a board spun off into another kind starts with what it is for; the idea follows. */
+  const SPIN_GOAL: Record<Kind, Record<Lang, string>> = {
+    ideas: { sv: 'Idéer utifrån detta: ', en: 'Ideas from this: ', pt: 'Ideias a partir disto: ' },
+    niche: { sv: 'Marknadsnischer utifrån detta: ', en: 'Market niches from this: ', pt: 'Nichos de mercado a partir disto: ' },
+    post: { sv: 'Inlägg i sociala medier utifrån detta: ', en: 'Social media posts from this: ', pt: 'Posts para redes sociais a partir disto: ' },
+    video: { sv: 'Videor utifrån detta: ', en: 'Videos from this: ', pt: 'Vídeos a partir disto: ' },
+  };
+
   const verdictOf = (i: Idea): Verdict | null =>
     isJudged(i) ? { originality: i.originality!, feasibility: i.feasibility!, impact: i.impact!, fit: i.fit, reason: i.reason ?? '' } : null;
 
@@ -161,10 +170,10 @@ export function createEngine(deps: Deps) {
     const board = mustBoard(idea.boardId);
     const lineage = repo.lineage(idea.id);
     const lang = board.config.lang;
-    const { brief } = await call(board.id, () => writeBrief({ chat: deps.chat, model: modelFor(board, 'brief'), idea, goal: board.goal, lineage, lang }));
+    const { brief } = await call(board.id, () => writeBrief({ chat: deps.chat, model: modelFor(board, 'brief'), idea, goal: board.goal, lineage, lang, kind: board.config.kind }));
     let path: string;
     try {
-      path = await writeProject({ root: deps.settings().projectsRoot, brief, idea, goal: board.goal, lineage, lang, gitInit: deps.gitInit });
+      path = await writeProject({ root: deps.settings().projectsRoot, brief, idea, goal: board.goal, lineage, lang, kind: board.config.kind, gitInit: deps.gitInit });
     } catch (e: any) {
       throw new AppError(500, 'project_failed', e?.message ?? String(e));
     }
@@ -531,14 +540,40 @@ export function createEngine(deps: Deps) {
       return { guests, skipped };
     },
 
-    /** Spin an idea off into its own board, to refine it in its own context. */
-    spinoff(ideaId: number) {
+    /**
+     * Spin an idea off into its own board, to refine it in its own context. With another kind
+     * (a niche into posts, a post into videos), the idea becomes the new board's goal and its first
+     * seed is the idea rewritten in that kind's shape, so the new jury judges a post, not a niche.
+     * brief: who the new board works for; by default the parent board's.
+     */
+    async spinoff(ideaId: number, opts: { kind?: unknown; brief?: unknown } = {}) {
       const idea = mustIdea(ideaId);
       const parent = mustBoard(idea.boardId);
-      const goal = (idea.pitch ? `${idea.title}: ${idea.pitch}` : idea.title).slice(0, 600);
-      const board = repo.createBoard({ title: idea.title.slice(0, 120), goal, config: { ...parent.config, mode: 'manual' }, originIdeaId: idea.id });
+      const kind: Kind = opts.kind == null || opts.kind === '' ? parent.config.kind : toKind(opts.kind);
+      const brief = typeof opts.brief === 'string' ? opts.brief : parent.config.brief;
+      const text = idea.pitch ? `${idea.title}: ${idea.pitch}` : idea.title;
+      const same = kind === parent.config.kind;
+      // Another kind brings its own generators: the parent's flow and project setting are for its own kind.
+      const { flow: _flow, flowName: _name, autoProjectOnGold: _proj, ...shared } = parent.config;
+      const board = repo.createBoard({
+        title: idea.title.slice(0, 120),
+        goal: same ? text.slice(0, 600) : `${SPIN_GOAL[kind][parent.config.lang]}${text}`.slice(0, 1200),
+        kind,
+        config: same ? { ...parent.config, mode: 'manual', brief } : { ...shared, mode: 'manual', brief },
+        originIdeaId: idea.id,
+      });
+      let title = idea.title, pitch = idea.pitch;
+      if (!same) {
+        // If the rewrite fails, the idea itself is the seed: the generators still turn it into the new kind.
+        try {
+          const r = await call(board.id, () => llm.distill({ model: modelFor(board, 'distill'), flow: board.config.flow, board, text, lang: board.config.lang }));
+          ({ title, pitch } = r.idea);
+        } catch (e: any) {
+          bus.emit(board.id, { type: 'error', code: e?.code ?? 'llm_failed', message: e?.message ?? String(e) });
+        }
+      }
       const root = repo.insertIdea({
-        boardId: board.id, title: idea.title, pitch: idea.pitch, kind: 'seed', sourceUrl: idea.sourceUrl,
+        boardId: board.id, title, pitch, kind: 'seed', sourceUrl: idea.sourceUrl,
         x: 0, y: 0, generation: 0, originIdeaId: idea.id, originBoardId: idea.boardId,
       });
       bus.emit(parent.id, { type: 'spinoff', ideaId: idea.id, boardId: board.id, title: board.title });

@@ -9,6 +9,8 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { LANG_NAME, type ChatFn, type Lang } from './llm.ts';
 import { medal, scoreSum } from '../public/js/score.js';
+import { critLabels } from '../public/js/kinds.js';
+import { packOf } from './kinds.ts';
 
 export type Brief = {
   name: string;
@@ -79,14 +81,15 @@ export function expandHome(p: string) {
 }
 
 export async function writeBrief(a: {
-  chat: ChatFn; model: string; idea: IdeaLike; goal: string; lineage: IdeaLike[]; lang: Lang;
+  chat: ChatFn; model: string; idea: IdeaLike; goal: string; lineage: IdeaLike[]; lang: Lang; kind?: string;
 }) {
   const sum = scoreSum(a.idea);
+  const [co, cf, ci] = packOf(a.kind).criteria;
   const user = [
     'Turn this idea into a kickoff brief for a coding agent (Claude Code) that will build it from an empty folder.',
     `The idea:\n${fmt(a.idea)}`,
     a.goal.trim() ? `The goal of the board it came from: ${a.goal.trim()}` : '',
-    sum != null ? `Jury verdict: originality ${a.idea.originality}, feasibility ${a.idea.feasibility}, impact ${a.idea.impact} (of 5). ${a.idea.reason ?? ''}` : '',
+    sum != null ? `Jury verdict: ${co} ${a.idea.originality}, ${cf} ${a.idea.feasibility}, ${ci} ${a.idea.impact} (of 5). ${a.idea.reason ?? ''}` : '',
     a.lineage.length ? `It grew out of these ideas:\n${a.lineage.map((i) => `- ${fmt(i)}`).join('\n')}` : '',
     `Write in the language of the idea; if that is unclear, in ${LANG_NAME[a.lang]}. If Swedish, write idiomatic Swedish; if Portuguese, natural Brazilian Portuguese. The slug is always ASCII.`,
   ]
@@ -172,8 +175,9 @@ const L = {
 };
 const MEDAL = ['', ' 🥉', ' 🥈', ' 🥇'];
 
-export function renderClaudeMd(a: { brief: Brief; idea: IdeaLike; goal: string; lineage: IdeaLike[]; lang: Lang; date: string }) {
-  const t = L[a.lang];
+export function renderClaudeMd(a: { brief: Brief; idea: IdeaLike; goal: string; lineage: IdeaLike[]; lang: Lang; date: string; kind?: string }) {
+  const [o, f, i] = critLabels(a.kind ?? 'ideas', a.lang);
+  const t = { ...L[a.lang], o, f, i };
   const b = a.brief;
   const bullets = (xs: string[]) => xs.map((x) => `- ${x}`).join('\n');
   const sum = scoreSum(a.idea);
@@ -223,7 +227,7 @@ async function uniqueDir(root: string, slug: string) {
 }
 
 export async function writeProject(a: {
-  root: string; brief: Brief; idea: IdeaLike; goal: string; lineage: IdeaLike[]; lang: Lang; gitInit?: boolean;
+  root: string; brief: Brief; idea: IdeaLike; goal: string; lineage: IdeaLike[]; lang: Lang; kind?: string; gitInit?: boolean;
 }) {
   const root = resolve(expandHome(a.root));
   if (!isAbsolute(expandHome(a.root))) throw new Error(`The projects folder must be an absolute path or start with ~ (got "${a.root}")`);

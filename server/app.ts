@@ -11,6 +11,7 @@ import type { Autopilot } from './autopilot.ts';
 import { toLang, type Lang } from './llm.ts';
 import { PROVIDERS, keySource, listModels, mergeAppSettings, probeModels, type AppSettings, type ProviderId } from './providers.ts';
 import { fitness, medal, scoreSum } from '../public/js/score.js';
+import { critLabels, kindOf } from '../public/js/kinds.js';
 
 export type Runtime = {
   get(): AppSettings;
@@ -82,7 +83,8 @@ const LABELS = {
 const MEDAL_ICON = ['', '🥉 ', '🥈 ', '🥇 '];
 
 export function boardMarkdown(board: Board, ideas: Idea[], edges: { from: number; to: number }[], lang: Lang) {
-  const L = LABELS[lang];
+  const [originality, feasibility, impact] = critLabels(kindOf(board), lang);
+  const L = { ...LABELS[lang], originality, feasibility, impact };
   const byId = new Map(ideas.map((i) => [i.id, i]));
   const parents = new Map<number, Idea[]>();
   for (const e of edges) {
@@ -221,6 +223,7 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
           title: str(b.title, 120) || ({ sv: 'Ny tavla', en: 'New board', pt: 'Novo quadro' } as const)[lang],
           goal: str(b.goal, GOAL_MAX),
           templateId: Number.isInteger(b.templateId) ? b.templateId : null,
+          kind: b.kind,
           // The browser's defaults for new boards (jury guidance, autopilot pace); mergeConfig keeps only well-typed values.
           config: { ...(b.config && typeof b.config === 'object' ? b.config : {}), lang },
         }),
@@ -278,7 +281,7 @@ export function createHandler({ repo, engine, autopilot, runtime, publicDir }: D
     ['POST', /^\/api\/ideas\/(\d+)\/reveal$/, ([id]) => engine.reveal(+id)],
     ['POST', /^\/api\/ideas\/(\d+)\/note$/, ([id]) => engine.saveNote(+id)],
     ['POST', /^\/api\/ideas\/(\d+)\/announce$/, ([id], b) => engine.announce(+id, b.boardIds)],
-    ['POST', /^\/api\/ideas\/(\d+)\/spinoff$/, ([id]) => engine.spinoff(+id)],
+    ['POST', /^\/api\/ideas\/(\d+)\/spinoff$/, ([id], b) => engine.spinoff(+id, { kind: b?.kind, brief: b?.brief })],
 
     // ---- leads
     ['POST', /^\/api\/boards\/(\d+)\/leads\/(x|research)$/, ([id, source]) => engine.refreshLeads(+id, source as 'x' | 'research')],
